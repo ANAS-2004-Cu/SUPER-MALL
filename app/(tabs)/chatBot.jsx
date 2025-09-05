@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, ActivityIndicator } from 'react-native';
 import axios from 'axios';
-import context from '../context';
+import context from '../ChatBot/context';
 import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import Icon from 'react-native-vector-icons/Ionicons';
 
@@ -99,7 +99,7 @@ export default function GeminiChat() {
   return (
     <View style={styles.container}>
       <View style={styles.headerContainer}>
-        <Text style={styles.headerText}>I'm here for you, anytime!</Text>
+        <Text style={styles.headerText}>I&apos;m here for you, anytime!</Text>
       </View>
       <FlatList
         data={messages}
@@ -173,13 +173,6 @@ const styles = StyleSheet.create({
     borderRadius: 200,
     marginBottom: 12
   },
-  headerText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: 'white',
-    letterSpacing: 1,
-  }
-  ,
   container: {
     flex: 1,
     backgroundColor: 'ffffff',
@@ -238,19 +231,10 @@ const styles = StyleSheet.create({
     marginHorizontal: 8,
     color: '#FFAB91',
   },
-  suggestionsContainer: {
-    paddingHorizontal: 10,
-    marginBottom: 10,
-  },
   suggestionsTitle: {
     fontWeight: 'bold',
     marginBottom: 5,
     color: '#444',
-  },
-  suggestionsList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6
   },
   suggestionButton: {
     backgroundColor: '#E0F2F1',
@@ -263,7 +247,8 @@ const styles = StyleSheet.create({
   suggestionText: {
     color: '#00796B',
     fontSize: 14
-  }, headerContainer: {
+  },
+  headerContainer: {
     marginBottom: 16,
     alignItems: 'center',
     justifyContent: 'center',

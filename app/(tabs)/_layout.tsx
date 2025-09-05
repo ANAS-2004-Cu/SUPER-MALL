@@ -50,7 +50,7 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name='chatBot'
+        name='ChatBot'
         options={{
           title: 'Chat',
           tabBarIcon: ({ color }) => (
