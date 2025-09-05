@@ -1,11 +1,9 @@
-import { ActivityIndicator, Dimensions, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
-import React, { useState } from 'react'
-import { useRouter } from 'expo-router';
-import { sendPasswordResetEmail } from 'firebase/auth';
-import { auth, db } from '../Firebase/Firebase';
-import { collection, getDocs, query, where } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
-import MiniAlert from '../components/MiniAlert';
+import { useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import { ActivityIndicator, Dimensions, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import MiniAlert from '../../components/MiniAlert';
+import { resetPassword } from '../../Firebase/Firebase';
 
 const ForgetPass = () => {
   const router = useRouter();
@@ -31,28 +29,33 @@ const ForgetPass = () => {
       showAlert("Please enter your email", "error");
       return;
     }
+
+    // Trim whitespace but keep original case for validation
+    const trimmedEmail = email.trim();
+
+    // Basic email validation with original email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      showAlert("Please enter a valid email address", "error");
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const q = query(collection(db, 'Users'), where('email', '==', email))
-      const querySnapshot = await getDocs(q);
-
-      if (!querySnapshot.empty) {
-        await sendPasswordResetEmail(auth, email);
+      // Pass original email - Firebase function will handle case conversion
+      const result = await resetPassword(trimmedEmail);
+      
+      if (result.success) {
         showAlert("Reset password link sent to your email", "success");
         setTimeout(() => {
           back();
         }, 3000);
       } else {
-        showAlert("Email doesn't exist", "error");
+        showAlert(result.error || "Failed to send reset password email", "error");
       }
     } catch (err) {
-      if ((err as Error).message === "Firebase: Error (auth/invalid-email).") {
-        showAlert("Wrong format of email", "error");
-      }
-      else {
-        showAlert((err as Error).message, "error");
-      }
+      showAlert("An unexpected error occurred. Please try again", "error");
     } finally {
       setLoading(false);
     }

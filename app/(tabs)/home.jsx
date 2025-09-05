@@ -391,7 +391,6 @@ const HomePage = () => {
             />
           </View>
         </TouchableOpacity>
-
         <Text style={styles.sectionTitle}>Categories</Text>
         <FlatList
           data={Categories}

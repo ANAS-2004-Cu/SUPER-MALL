@@ -24,7 +24,7 @@ const Profile = () => {
 
   return (
     <>
-      <Stack.Screen name="Profile" options={{ headerShown: false }} />
+      <Stack.Screen name="profile" options={{ headerShown: false }} />
       {
         alertMessage && (
           <MiniAlert

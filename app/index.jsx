@@ -1,40 +1,51 @@
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, Image, ActivityIndicator } from 'react-native';
-import { useRouter, Stack } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Image } from 'expo-image';
+import { Stack, useRouter } from 'expo-router';
+import React, { useEffect, useRef } from 'react';
+import { Animated, StyleSheet, View } from 'react-native';
 
 const WelcomeScreen = () => {
   const router = useRouter();
+  const titleAnimation = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    const checkLoginStatus = async () => {
-      try {
-        const userDataString = await AsyncStorage.getItem('DataForUser');
-        const userData = userDataString ? JSON.parse(userDataString) : null;
+    setTimeout(() => {
+      Animated.timing(titleAnimation, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      }).start();
+    }, 1500);
 
-        if (userData) {
-          console.log("User data found:", userData);
-          if (userData.isAdmin) {
-            router.replace('./Admintabs');
-            router.push('./Admintabs/Admin');
+    const handleNavigation = async () => {
+      setTimeout(async () => {
+        try {
+          const userDataObject = await AsyncStorage.getItem('UserObjects');
+          const isAdminString = false;
+          
+          if (userDataObject) {
+            const isAdmin = isAdminString === 'true';
+            
+            if (isAdmin) {
+              console.log("Admin user found, redirecting to admin panel");
+              router.replace('./Admintabs');
+            } else {
+              console.log("Regular user found, redirecting to user home");
+              router.replace('/(tabs)');
+              router.push('/home');
+            }
           } else {
-            router.replace('/(tabs)');
-            router.push('/home');
+            console.log("No user data found, redirecting to login");
+            router.replace('/Authentication/Login');
           }
-        } else {
-          setTimeout(() => {
-            router.replace('/Login');
-          }, 3000);
+        } catch (error) {
+          console.error('Error reading AsyncStorage:', error);
+          router.replace('/Authentication/Login');
         }
-      } catch (error) {
-        console.error('Error reading AsyncStorage:', error);
-        setTimeout(() => {
-          router.replace('/Login');
-        }, 3000);
-      }
+      }, 5000);
     };
 
-    checkLoginStatus();
+    handleNavigation();
   }, []);
 
   return (
@@ -42,13 +53,15 @@ const WelcomeScreen = () => {
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container}>
         <View style={styles.content}>
-          <Image source={require('../assets/images/pngwing.com.png')} style={styles.logo} />
-          <Text style={styles.title}>SUPERMALL</Text>
-          <ActivityIndicator
-            size="large"
-            color="#4A3222"
-            style={styles.loader}
-          />
+          <Image source={require('../assets/images/cart.gif')} style={styles.logo} />
+          <Animated.Text 
+            style={[
+              styles.title, 
+              { opacity: titleAnimation }
+            ]}
+          >
+            SUPERMALL
+          </Animated.Text>
         </View>
       </View>
     </>
@@ -74,13 +87,10 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   logo: {
-    width: 90,
-    height: 100,
+    width: 120,
+    height: 120,
     resizeMode: 'contain',
   },
-  loader: {
-    marginTop: 20,
-  }
 });
 
 export default WelcomeScreen;

@@ -1,13 +1,11 @@
-import { Dimensions, StyleSheet, Text, TextInput, TouchableOpacity, View, ActivityIndicator } from 'react-native'
-import React, { useState } from 'react'
-import { useRouter } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth, db, getUserData, useGoogleSignIn } from '../Firebase/Firebase';
-import { getDoc, doc } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import { ActivityIndicator, Dimensions, Linking, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
-import MiniAlert from '../components/MiniAlert';
+import MiniAlert from '../../components/MiniAlert';
+import { getUserData, signIn } from '../../Firebase/Firebase';
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -15,10 +13,10 @@ const Login = () => {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showpass, setshowpass] = useState(true);
-  const [selectedCategories, setSelectedCategories] = useState([]);
   const [alertMsg, setAlertMsg] = useState(null);
   const [alertType, setAlertType] = useState('success');
   const [load, setLoad] = useState(false);
+  const [showCustomerService, setShowCustomerService] = useState(false);
   const router = useRouter();
 
   const showAlert = (message, type = 'success') => {
@@ -41,51 +39,51 @@ const Login = () => {
     setLoading(true);
 
     try {
-      const getUser = await signInWithEmailAndPassword(auth, email, password);
-      const user = getUser.user;
-      const userDoc = await getDoc(doc(db, "Users", user.uid));
-
-      if (userDoc.exists()) {
-        const data = await getUserData(user.uid);
-        console.log(data?.isAdmin);
-        const newCategories = data?.preferredCategories;
-        console.log(newCategories);
-        setSelectedCategories(newCategories);
-        await AsyncStorage.setItem('DataForUser', JSON.stringify({
-          uid: user.uid,
-          email: user.email,
-          isAdmin: data?.isAdmin || false,
-        }));
-        if (data?.isAdmin === true) {
-          router.replace('./Admintabs');
-          router.push('./Admintabs/Admin');
-        }
-        else if (data?.isBlocked === true) {
-          showAlert('This account is blocked', 'error');
-        }
-        else {
-          router.replace('/(tabs)');
-          router.push({
-            pathname: '/home',
-            params: { categories: JSON.stringify(newCategories) }
+      const result = await signIn(email, password);
+      
+      if (result.success) {
+        const user = result.user;
+        const userData = await getUserData(user.uid);
+        
+        if (userData) {
+          await AsyncStorage.setItem('UserObject', JSON.stringify(userData));
+          
+          if (userData?.isAdmin === true) {
+            router.replace('./Admintabs');
+            router.push('./Admintabs/Admin');
           }
-          );
+          else if (userData?.isBlocked === true) {
+            showAlert('This Account is Blocked , Contact With Customer Service', 'error');
+            setShowCustomerService(true);
+          }
+          else {
+            router.replace('/(tabs)');
+            router.push('/home');
+          }
+        } else {
+          setError('User not found.');
+          showAlert('User not found', 'error');
         }
       } else {
-        setError('User not found.');
-        showAlert('Wrong Email or password', 'error');
+        setError(result.error);
+        showAlert(result.error, 'error');
       }
 
     } catch (error) {
-      setError('Invalid email or password.');
-      showAlert('Wrong Email or password', 'error');
+      setError('An unexpected error occurred');
+      showAlert('An unexpected error occurred', 'error');
     }
     setLoading(false);
   }
 
   const reg = () => {
-    router.push('/Register');
+    router.push('/Authentication/Register');
   }
+
+  const openWhatsApp = () => {
+    const whatsappUrl = 'https://wa.me/201032672532';
+    Linking.openURL(whatsappUrl).catch(err => console.error('Error opening WhatsApp:', err));
+  };
 
   return (
     <View style={styles.fl}>
@@ -121,7 +119,7 @@ const Login = () => {
         </TouchableOpacity>
         <View style={styles.semif}>
 
-          <Text style={styles.text}>Don't have an account?</Text>
+          <Text style={styles.text}>Don&apos;t have an account?</Text>
 
           <TouchableOpacity style={styles.createButton} onPress={reg}>
             <Text style={styles.createButtonText}>Create One</Text>
@@ -142,6 +140,13 @@ const Login = () => {
 
         </TouchableOpacity>
       </View>
+
+      {showCustomerService && (
+        <TouchableOpacity style={styles.customerServiceButton} onPress={openWhatsApp}>
+          <FontAwesome name="whatsapp" size={24} color="white" />
+          <Text style={styles.customerServiceText}>Customer Service</Text>
+        </TouchableOpacity>
+      )}
 
       {loading && (
         <View style={styles.loadingOverlay}>
@@ -301,6 +306,31 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: '600',
+  },
+  customerServiceButton: {
+    position: 'absolute',
+    bottom: 30,
+    left: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#25D366',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderRadius: 25,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  customerServiceText: {
+    color: 'white',
+    marginLeft: 8,
+    fontWeight: 'bold',
+    fontSize: 14,
   },
 });
 

@@ -5,7 +5,7 @@ import { collection, getDocs, doc, getDoc, deleteDoc, updateDoc, arrayUnion } fr
 import { db } from "../Firebase/Firebase.jsx";
 import { getAuth } from "firebase/auth";
 import { Ionicons } from '@expo/vector-icons';
-import LottieView from 'lottie-react-native';
+// import LottieView from 'lottie-react-native';
 import MiniAlert from '../components/MiniAlert';
 const CartScreen = () => {
   const router = useRouter();
@@ -155,13 +155,13 @@ const CartScreen = () => {
         justifyContent: 'center',
         flex: 1,
       }}>
-        <LottieView
+        {/* <LottieView
           source={require('../components/Animation.json')}
           autoPlay
           loop={false}
           onAnimationFinish={() => setIsCheckoutComplete(false)}
           style={{ width: 200, height: 200 }}
-        />
+        /> */}
         <Text style={{ fontSize: 20, marginTop: 20 }}>Checkout Successful!</Text>
 
       </View>
