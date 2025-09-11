@@ -1,30 +1,21 @@
-import { Stack, router } from 'expo-router';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Platform,
-  UIManager,
-  Linking
-} from 'react-native';
-import React, { useState } from 'react';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Stack, router } from 'expo-router';
+import React from 'react';
+import {
+  Linking,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
+} from 'react-native';
 
 interface HelpTopicItemProps {
   icon: React.ComponentProps<typeof Ionicons>['name'];
   title: string;
   subtitle: string;
   action?: () => void;
-}
-
-interface FAQItemProps {
-  question: string;
-  answer: string;
-  isExpanded: boolean;
-  onToggle: () => void;
 }
 
 const HelpTopicItem: React.FC<HelpTopicItemProps> = ({ icon, title, subtitle, action }) => {
@@ -51,32 +42,29 @@ const HelpTopicItem: React.FC<HelpTopicItemProps> = ({ icon, title, subtitle, ac
   );
 };
 
-
 const Help = () => {
-  const handleCallPress = () => {
-    Linking.openURL('tel:+201032672532');
-  };
+  const contactMethods = [
+    { icon: 'call', label: 'Call Us', color: '#66BB6A', action: () => Linking.openURL('tel:+201032672532') },
+    { icon: 'mail', label: 'Email Us', color: '#7986CB', action: () => Linking.openURL('mailto:anslahga2@gmail.com') },
+    { icon: 'logo-whatsapp', label: 'WhatsApp', color: '#25D366', action: () => Linking.openURL('https://wa.me/201032672532') }
+  ];
 
-  const handleEmailPress = () => {
-    Linking.openURL('mailto:anslahga2@gmail.com');
-  };
-
-  const handleWhatsAppPress = () => {
-    Linking.openURL('https://wa.me/201032672532');
-  };
+  const helpTopics = [
+    { icon: 'person-outline', title: 'Account Information', subtitle: 'Manage your account, Update Data', route: './editprofile' },
+    { icon: 'key-outline', title: 'Password & Login Issues', subtitle: 'Reset & Update Password', route: '../Authentication/ForgetPass' },
+    { icon: 'location-outline', title: 'Address', subtitle: 'Manage your saved addresses', route: './address' },
+    { icon: 'cube-outline', title: 'Orders & Tracking', subtitle: 'Track your order, shipping updates', route: './orders' }
+  ];
 
   return (
     <>
       <Stack.Screen name="help" options={{ headerShown: false }} />
-      <LinearGradient
-        colors={['white', '#FFE4C4']}
-        style={styles.container}
-      >
+      <LinearGradient colors={['white', '#FFE4C4']} style={styles.container}>
         <View>
           <View style={styles.header}>
             <TouchableOpacity
               style={styles.backButton}
-              onPress={() => { router.back() }}
+              onPress={() => router.back()}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <Ionicons name="arrow-back-circle-outline" size={36} color="#5D4037" />
@@ -96,70 +84,40 @@ const Help = () => {
             <View style={styles.summaryContent}>
               <View style={styles.summaryItem}>
                 <Ionicons name="information-circle" size={24} color="#6D4C41" />
-                <Text style={styles.summaryText}>
-                  Help Center
-                </Text>
+                <Text style={styles.summaryText}>Help Center</Text>
               </View>
               <View style={styles.summarySeparator} />
               <View style={styles.summaryItem}>
                 <Ionicons name="call" size={22} color="#388E3C" />
-                <Text style={styles.summaryText}>
-                  24/7 Support
-                </Text>
+                <Text style={styles.summaryText}>24/7 Support</Text>
               </View>
             </View>
           </View>
 
           <Text style={styles.sectionTitle}>How can we help you?</Text>
           <View style={styles.topicsContainer}>
-
-            <HelpTopicItem
-              icon="person-outline"
-              title="Account Information"
-              subtitle="Manage your account, Update Data"
-              action={() => { router.push('./editprofile') }}
-            />
-            <HelpTopicItem
-              icon="key-outline"
-              title="Password & Login Issues"
-              subtitle="Reset & Update Password"
-              action={() => { router.push('../ForgetPass') }}
-            />
-            <HelpTopicItem
-              icon="location-outline"
-              title="Address"
-              subtitle="Manage your saved addresses"
-              action={() => { router.push('./address') }}
-            />
-            <HelpTopicItem
-              icon="cube-outline"
-              title="Orders & Tracking"
-              subtitle="Track your order, shipping updates"
-              action={() => router.push('./orders')}
-            />
+            {helpTopics.map((topic, index) => (
+              <HelpTopicItem
+                key={index}
+                icon={topic.icon as React.ComponentProps<typeof Ionicons>['name']}
+                title={topic.title}
+                subtitle={topic.subtitle}
+                action={() => router.push(topic.route as any)}
+              />
+            ))}
           </View>
 
           <View style={styles.contactSection}>
             <Text style={styles.contactTitle}>Need more help?</Text>
             <View style={styles.contactOptions}>
-              <TouchableOpacity style={styles.contactOption} onPress={handleCallPress}>
-                <View style={[styles.contactIconContainer, styles.phoneIcon]}>
-                  <Ionicons name="call" size={24} color="white" />
-                </View>
-                <Text style={styles.contactOptionText}>Call Us</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.contactOption} onPress={handleEmailPress}>
-                <View style={[styles.contactIconContainer, styles.emailIcon]}>
-                  <Ionicons name="mail" size={24} color="white" />
-                </View>
-                <Text style={styles.contactOptionText}>Email Us</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.contactOption} onPress={handleWhatsAppPress}>
-                <View style={[styles.contactIconContainer, styles.whatsappIcon]}>
-                  <Ionicons name="logo-whatsapp" size={24} color="white" />
-                </View>
-                <Text style={styles.contactOptionText}>WhatsApp</Text>
-              </TouchableOpacity>
+              {contactMethods.map((method, index) => (
+                <TouchableOpacity key={index} style={styles.contactOption} onPress={method.action}>
+                  <View style={[styles.contactIconContainer, { backgroundColor: method.color }]}>
+                    <Ionicons name={method.icon as React.ComponentProps<typeof Ionicons>['name']} size={24} color="white" />
+                  </View>
+                  <Text style={styles.contactOptionText}>{method.label}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
           </View>
         </ScrollView>
@@ -167,7 +125,7 @@ const Help = () => {
         <View style={styles.chatButtonContainer}>
           <TouchableOpacity
             style={styles.chatButton}
-            onPress={() => router.replace('../(tabs)/chatBot')}
+            onPress={() => router.replace('../(tabs)/ChatBot')}
             activeOpacity={0.85}
           >
             <Ionicons name="chatbubble-ellipses" size={24} color="white" />
@@ -299,18 +257,6 @@ const styles = StyleSheet.create({
     color: '#795548',
     marginRight: 2,
   },
-  faqSection: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    marginHorizontal: 15,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
   faqItem: {
     borderRadius: 8,
     paddingVertical: 12,
@@ -383,15 +329,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
-  },
-  emailIcon: {
-    backgroundColor: '#7986CB',
-  },
-  phoneIcon: {
-    backgroundColor: '#66BB6A',
-  },
-  whatsappIcon: {
-    backgroundColor: '#25D366',
   },
   contactOptionText: {
     fontSize: 14,

@@ -1,23 +1,20 @@
-import { Stack, router } from 'expo-router';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Image,
-  TouchableOpacity,
-  FlatList,
-  ActivityIndicator,
-  RefreshControl,
-  Animated,
-  Dimensions
-} from 'react-native';
-import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { auth, db } from '../../Firebase/Firebase';
-import { doc, getDoc, updateDoc, arrayRemove } from 'firebase/firestore';
-import { MaterialIcons, FontAwesome, Ionicons, AntDesign, Feather } from '@expo/vector-icons';
+import { AntDesign, Feather, FontAwesome, Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import MiniAlert from '../../components/MiniAlert';
+import { Stack, router, useFocusEffect } from 'expo-router';
+import { arrayRemove } from 'firebase/firestore';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  Image,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
+} from 'react-native';
 import DeleteModal from '../../components/DeleteModal';
+import MiniAlert from '../../components/MiniAlert';
+import { auth, getDocument, updateDocument } from '../../Firebase/Firebase';
 
 interface Product {
   id: string;
@@ -27,151 +24,93 @@ interface Product {
   discount?: number;
 }
 
+interface UserData {
+  id: string;
+  Fav?: string[];
+  [key: string]: any;
+}
+
 const Wishlist = () => {
   const [favorites, setFavorites] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
-  const userId = auth.currentUser?.uid;
   const [alertMsg, setAlertMsg] = useState<string | null>(null);
   const [alertType, setAlertType] = useState<'success' | 'error'>('success');
-  const [deleteModalVisible, setDeleteModalVisible] = useState<boolean>(false);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [deleteLoading, setDeleteLoading] = useState<boolean>(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
-  const emptyStateAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-  const itemAnim = useRef(new Animated.Value(0)).current;
+  const userId = auth.currentUser?.uid;
 
-  const animatePress = () => {
-    Animated.sequence([
-      Animated.timing(scaleAnim, {
-        toValue: 0.95,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(scaleAnim, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  };
+  const formatPrice = (price: number) => price?.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") || "0";
 
-  const formatPrice = (price: number) => {
-    return price ? price.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") : "0";
-  };
-
-  const runItemAnimation = () => {
-    Animated.timing(itemAnim, {
-      toValue: 1,
-      duration: 500,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  useEffect(() => {
-    if (favorites.length > 0) {
-      runItemAnimation();
-    }
-  }, [favorites]);
+  const calculateDiscountedPrice = (price: number, discount = 0) => 
+    discount > 0 ? price - (price * discount / 100) : price;
 
   const fetchFavorites = async () => {
-    if (!userId) {
-      setError('User not authenticated');
-      setLoading(false);
-      setRefreshing(false);
-      return;
-    }
-
+    if (!userId) return;
+    
     try {
-      itemAnim.setValue(0);
-
-      const userDocRef = doc(db, "Users", userId);
-      const userDoc = await getDoc(userDocRef);
-
-      if (!userDoc.exists()) {
-        setLoading(false);
-        setRefreshing(false);
+      setLoading(true);
+      setError('');
+      
+      const userResult = await getDocument("Users", userId);
+      if (!userResult.success) {
+        setError('Failed to fetch user data');
         return;
       }
 
-      const userData = userDoc.data();
-      const favoriteIds = userData.Fav || [];
-
-      if (favoriteIds.length === 0) {
+      const favoriteIds = (userResult.data as UserData)?.Fav || [];
+      if (!favoriteIds.length) {
         setFavorites([]);
-        setLoading(false);
-        setRefreshing(false);
-
-        Animated.timing(emptyStateAnim, {
-          toValue: 1,
-          duration: 500,
-          useNativeDriver: true
-        }).start();
-
         return;
       }
 
-      const productPromises = favoriteIds.map(async (productId: string) => {
-        const productDocRef = doc(db, "products", productId);
-        const productDoc = await getDoc(productDocRef);
-
-        if (productDoc.exists()) {
-          return {
-            id: productId,
-            ...productDoc.data(),
-          } as Product;
-        }
-        return null;
+      const productPromises = [...favoriteIds].reverse().map(async (productId: string) => {
+        const productResult = await getDocument("products", productId);
+        return productResult.success ? { id: productId, ...productResult.data } as Product : null;
       });
 
       const productsData = await Promise.all(productPromises);
-      setFavorites(productsData.filter(product => product !== null) as Product[]);
-
-      runItemAnimation();
+      setFavorites(productsData.filter(Boolean) as Product[]);
     } catch (err) {
       console.error("Error fetching favorites:", err);
       setError('Failed to load favorites');
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   };
 
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    setError('');
-    fetchFavorites();
-  }, [userId]);
-
+  // Fetch on component mount
   useEffect(() => {
     fetchFavorites();
   }, [userId]);
 
-  const confirmRemoveFromFavorites = (product: Product) => {
-    setSelectedProduct(product);
-    setDeleteModalVisible(true);
-  };
+  // Fetch every time the screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      fetchFavorites();
+    }, [userId])
+  );
 
   const removeFromFavorites = async () => {
-    if (!selectedProduct || !userId) return;
+    if (!selectedProduct?.id || !userId) return;
 
     setDeleteLoading(true);
     try {
-      const userDocRef = doc(db, "Users", userId);
-
-      await updateDoc(userDocRef, {
+      const updateResult = await updateDocument("Users", userId, {
         Fav: arrayRemove(selectedProduct.id)
       });
 
-      setFavorites(prev => prev.filter(item => item.id !== selectedProduct.id));
-      setAlertMsg(`${String(selectedProduct.name).split(' ').slice(0, 2).join(' ')} removed from your favorites`);
-      setAlertType('success');
-
-      setTimeout(() => {
-        setDeleteModalVisible(false);
-      }, 3000);
+      if (updateResult.success) {
+        setFavorites(prev => prev.filter(item => item.id !== selectedProduct.id));
+        setAlertMsg(`${selectedProduct.name.split(' ').slice(0, 2).join(' ')} removed from favorites`);
+        setAlertType('success');
+        setTimeout(() => setDeleteModalVisible(false), 2000);
+      } else {
+        setAlertMsg("Failed to remove item from favorites");
+        setAlertType('error');
+      }
     } catch (err) {
       console.error("Error removing from favorites:", err);
       setAlertMsg("Failed to remove item from favorites");
@@ -181,118 +120,144 @@ const Wishlist = () => {
     }
   };
 
-  const navigateToProduct = (productId: string) => {
-    router.push({
-      pathname: '/singlepage',
-      params: { id: productId }
-    });
-  };
-
-  const renderItem = ({ item, index }: { item: Product, index: number }) => {
-    const itemOpacity = itemAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [0, 1],
-      extrapolate: 'clamp',
-    });
-    const itemTranslateY = itemAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [50, 0],
-      extrapolate: 'clamp',
-    });
-
-    const discountedPrice = item.discount && item.discount > 0
-      ? item.price - (item.price * item.discount / 100)
-      : item.price;
-
+  const renderPrice = (item: Product) => {
     const hasDiscount = item.discount && item.discount > 0;
+    const discountedPrice = calculateDiscountedPrice(item.price, item.discount);
 
     return (
-      <Animated.View style={{
-        opacity: itemOpacity,
-        transform: [{ translateY: itemTranslateY }]
-      }}>
-        <TouchableOpacity
-          style={styles.productCard}
-          activeOpacity={0.8}
-          onPress={() => navigateToProduct(item.id)}
-        >
-          <View style={styles.productContent}>
-            <View style={styles.imageContainer}>
-              {item.image ? (
-                <Image
-                  source={{ uri: item.image }}
-                  style={styles.productImage}
-                  resizeMode="cover"
-                />
-              ) : (
-                <View style={[styles.productImage, styles.noProductImage]}>
-                  <MaterialIcons name="image-not-supported" size={30} color="#a0a0a0" />
-                </View>
-              )}
-              <View style={styles.favoriteIndicator}>
-                <Ionicons name="heart" size={14} color="#FF6B6B" />
-                <Text style={styles.favoriteText}>Favorited</Text>
+      <View style={styles.priceContainer}>
+        {hasDiscount ? (
+          <>
+            <View style={styles.priceRow}>
+              <Text style={styles.originalPrice}>{formatPrice(item.price)} EGP</Text>
+              <View style={styles.discountTag}>
+                <Text style={styles.discountValue}>-{item.discount}%</Text>
               </View>
             </View>
+            <Text style={styles.discountedPrice}>{formatPrice(discountedPrice)} EGP</Text>
+          </>
+        ) : (
+          <Text style={styles.regularPrice}>{formatPrice(item.price)} EGP</Text>
+        )}
+      </View>
+    );
+  };
 
-            <View style={styles.productDetails}>
-              <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
-              <View style={styles.infoRow}>
-                <View style={styles.infoChip}>
-                  <FontAwesome name="dollar" size={14} color="#388E3C" />
+  const renderItem = ({ item }: { item: Product }) => (
+    <TouchableOpacity
+      style={styles.productCard}
+      activeOpacity={0.8}
+      onPress={() => router.push({ pathname: '/singlepage', params: { id: item.id } })}
+    >
+      <View style={styles.productContent}>
+        <View style={styles.imageContainer}>
+          {item.image ? (
+            <Image source={{ uri: item.image }} style={styles.productImage} resizeMode="cover" />
+          ) : (
+            <View style={[styles.productImage, styles.noProductImage]}>
+              <MaterialIcons name="image-not-supported" size={30} color="#a0a0a0" />
+            </View>
+          )}
+          <View style={styles.favoriteIndicator}>
+            <Ionicons name="heart" size={14} color="#FF6B6B" />
+            <Text style={styles.favoriteText}>Favorited</Text>
+          </View>
+        </View>
 
-                  <View style={styles.priceContainer}>
-                    {hasDiscount ? (
-                      <>
-                        <View style={styles.priceRow}>
-                          <Text style={styles.originalPrice}>{formatPrice(item.price)} EGP</Text>
-                          <View style={styles.discountTag}>
-                            <Text style={styles.discountValue}>-{item.discount}%</Text>
-                          </View>
-                        </View>
-                        <Text style={styles.discountedPrice}>
-                          {formatPrice(discountedPrice)} EGP
-                        </Text>
-                      </>
-                    ) : (
-                      <Text style={styles.regularPrice}>{formatPrice(item.price)} EGP</Text>
-                    )}
-                  </View>
-                </View>
-              </View>
-
-              <View style={styles.viewDetailsContainer}>
-                <Text style={styles.viewDetailsText}>View Details</Text>
-                <Feather name="chevron-right" size={18} color="#555" />
-              </View>
+        <View style={styles.productDetails}>
+          <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
+          <View style={styles.infoRow}>
+            <View style={styles.infoChip}>
+              <FontAwesome name="dollar" size={14} color="#388E3C" />
+              {renderPrice(item)}
             </View>
           </View>
+          <View style={styles.viewDetailsContainer}>
+            <Text style={styles.viewDetailsText}>View Details</Text>
+            <Feather name="chevron-right" size={18} color="#555" />
+          </View>
+        </View>
+      </View>
 
-          <TouchableOpacity
-            style={styles.removeButton}
-            onPress={() => confirmRemoveFromFavorites(item)}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Ionicons name="trash-outline" size={20} color="#FF6B6B" />
-            <Text style={styles.removeText}>Remove</Text>
+      <TouchableOpacity
+        style={styles.removeButton}
+        onPress={() => {
+          setSelectedProduct(item);
+          setDeleteModalVisible(true);
+        }}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <Ionicons name="trash-outline" size={20} color="#FF6B6B" />
+        <Text style={styles.removeText}>Remove</Text>
+      </TouchableOpacity>
+    </TouchableOpacity>
+  );
+
+  const renderContent = () => {
+    if (loading) {
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#8D6E63" />
+          <Text style={styles.loadingText}>Fetching your wishlist...</Text>
+        </View>
+      );
+    }
+
+    if (error) {
+      return (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="alert-circle-outline" size={70} color="#A1887F" />
+          <Text style={styles.emptyTitle}>Something went wrong</Text>
+          <Text style={styles.emptyText}>{error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={fetchFavorites} activeOpacity={0.7}>
+            <Text style={styles.retryButtonText}>Try Again</Text>
+            <AntDesign name="reload1" size={20} color="white" />
           </TouchableOpacity>
-        </TouchableOpacity>
-      </Animated.View>
+        </View>
+      );
+    }
+
+    if (!favorites.length) {
+      return (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="heart-outline" size={80} color="#A1887F" />
+          <Text style={styles.emptyTitle}>No Favorites Yet</Text>
+          <Text style={styles.emptyText}>Looks like you haven&apos;t added any products to your wishlist.</Text>
+          <TouchableOpacity
+            style={styles.shopButton}
+            onPress={() => router.replace('../(tabs)/home')}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.shopButtonText}>Explore Products</Text>
+            <AntDesign name="arrowright" size={20} color="white" />
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return (
+      <>
+        <View style={styles.favoriteStatsContainer}>
+          <Ionicons name="heart" size={22} color="#6D4C41" />
+          <Text style={styles.favoriteStatsText}>
+            You have {favorites.length} {favorites.length === 1 ? 'product' : 'products'} in your wishlist
+          </Text>
+        </View>
+        <FlatList
+          data={favorites}
+          renderItem={renderItem}
+          keyExtractor={item => item.id}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+        />
+      </>
     );
   };
 
   return (
     <>
-      <Stack.Screen
-        name="Wishlist"
-        options={{
-          headerShown: false
-        }}
-      />
-      <LinearGradient
-        colors={['white', '#FFE4C4']}
-        style={styles.container}
-      >
+      <Stack.Screen name="Wishlist" options={{ headerShown: false }} />
+      <LinearGradient colors={['white', '#FFE4C4']} style={styles.container}>
         {alertMsg && (
           <MiniAlert
             message={alertMsg}
@@ -316,7 +281,7 @@ const Wishlist = () => {
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => { router.back() }}
+            onPress={() => router.back()}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <Ionicons name="arrow-back-circle-outline" size={36} color="#5D4037" />
@@ -331,74 +296,7 @@ const Wishlist = () => {
           </View>
         </View>
 
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#8D6E63" />
-            <Text style={styles.loadingText}>Fetching your wishlist...</Text>
-          </View>
-        ) : error ? (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="alert-circle-outline" size={70} color="#A1887F" />
-            <Text style={styles.emptyTitle}>Something went wrong</Text>
-            <Text style={styles.emptyText}>{error}</Text>
-            <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-              <TouchableOpacity
-                style={styles.retryButton}
-                onPress={() => {
-                  animatePress();
-                  onRefresh();
-                }}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.retryButtonText}>Try Again</Text>
-                <AntDesign name="reload1" size={20} color="white" />
-              </TouchableOpacity>
-            </Animated.View>
-          </View>
-        ) : favorites.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="heart-outline" size={80} color="#A1887F" style={styles.emptyIcon} />
-            <Text style={styles.emptyTitle}>No Favorites Yet</Text>
-            <Text style={styles.emptyText}>Looks like you haven't added any products to your wishlist.</Text>
-            <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-              <TouchableOpacity
-                style={styles.shopButton}
-                onPress={() => {
-                  animatePress();
-                  router.replace('../(tabs)/home');
-                }}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.shopButtonText}>Explore Products</Text>
-                <AntDesign name="arrowright" size={20} color="white" />
-              </TouchableOpacity>
-            </Animated.View>
-          </View>
-        ) : (
-          <>
-            <View style={styles.favoriteStatsContainer}>
-              <Ionicons name="heart" size={22} color="#6D4C41" />
-              <Text style={styles.favoriteStatsText}>
-                You have {favorites.length} {favorites.length === 1 ? 'product' : 'products'} in your wishlist
-              </Text>
-            </View>
-            <FlatList
-              data={favorites}
-              renderItem={renderItem}
-              keyExtractor={item => item.id}
-              contentContainerStyle={styles.listContent}
-              refreshControl={
-                <RefreshControl
-                  refreshing={refreshing}
-                  onRefresh={onRefresh}
-                  colors={['#8D6E63']}
-                  tintColor="#8D6E63"
-                />
-              }
-              showsVerticalScrollIndicator={false}
-            />
-          </>
-        )}
+        {renderContent()}
       </LinearGradient>
     </>
   );
@@ -488,10 +386,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 40,
     paddingBottom: 50,
-  },
-  emptyIcon: {
-    marginBottom: 15,
-    opacity: 0.7,
   },
   emptyTitle: {
     fontSize: 22,
@@ -625,11 +519,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     gap: 5,
   },
-  infoText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#616161',
-  },
   viewDetailsContainer: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
@@ -693,18 +582,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#e91e63',
     fontWeight: 'bold',
-  },
-  priceWithDiscountContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginLeft: 4,
-    flexWrap: 'wrap',
-  },
-  discountBadge: {
-    fontSize: 12,
-    color: '#e91e63',
-    fontWeight: '500',
-    marginLeft: 4,
   },
 });
 

@@ -1,13 +1,12 @@
-import { Stack, router } from 'expo-router';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
-import React, { useState, useEffect } from 'react';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { getDoc, doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
-import { db, auth } from '../../Firebase/Firebase';
-import MiniAlert from '../../components/MiniAlert';
+import { Stack, router } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { auth, getDocument, updateDocument } from '../../Firebase/Firebase';
 import AddressModal from '../../components/AddressModal';
 import DeleteModal from '../../components/DeleteModal';
+import MiniAlert from '../../components/MiniAlert';
 
 interface Address {
   id: string;
@@ -56,10 +55,7 @@ const AddressCard: React.FC<AddressCardProps> = ({ address, onEdit, onDelete, on
           <Text style={[styles.actionText, { color: '#FF5252' }]}>Delete</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          onPress={() => onSetDefault(address.id)}
-          style={styles.actionButton}
-        >
+        <TouchableOpacity onPress={() => onSetDefault(address.id)} style={styles.actionButton}>
           <Ionicons
             name={address.isDefault ? "star" : "star-outline"}
             size={20}
@@ -74,17 +70,15 @@ const AddressCard: React.FC<AddressCardProps> = ({ address, onEdit, onDelete, on
   );
 };
 
-const EmptyAddresses = () => {
-  return (
-    <View style={styles.emptyContainer}>
-      <Ionicons name="location-outline" size={80} color="#CCCCCC" />
-      <Text style={styles.emptyText}>No saved addresses</Text>
-      <Text style={styles.emptySubtext}>Add a new address for faster checkout</Text>
-    </View>
-  );
-};
+const EmptyAddresses = () => (
+  <View style={styles.emptyContainer}>
+    <Ionicons name="location-outline" size={80} color="#CCCCCC" />
+    <Text style={styles.emptyText}>No saved addresses</Text>
+    <Text style={styles.emptySubtext}>Add a new address for faster checkout</Text>
+  </View>
+);
 
-const address = () => {
+const Address = () => {
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -101,61 +95,151 @@ const address = () => {
     fetchUserAddresses();
   }, []);
 
+  const showAlert = (message: string, type: 'success' | 'error' = 'success') => {
+    setAlertMsg(message);
+    setAlertType(type);
+  };
+
+  const getUserAddresses = async () => {
+    const userId = auth.currentUser?.uid;
+    if (!userId) return null;
+
+    const userResult = await getDocument("Users", userId);
+    return userResult.success ? (userResult.data as any)?.Address || [] : null;
+  };
+
+  const updateUserAddresses = async (newAddresses: any[]) => {
+    const userId = auth.currentUser?.uid;
+    if (!userId) return false;
+
+    const updateResult = await updateDocument("Users", userId, { Address: newAddresses });
+    return updateResult.success;
+  };
+
   const fetchUserAddresses = async () => {
     try {
       setLoading(true);
-      const userId = auth.currentUser?.uid;
-
-      if (!userId) {
-        console.log("No user logged in");
+      const userAddresses = await getUserAddresses();
+      
+      if (!userAddresses) {
         setLoading(false);
         setRefreshing(false);
         return;
       }
 
-      const userDoc = await getDoc(doc(db, "Users", userId));
+      const formattedAddresses = userAddresses
+        .map((address: any, index: number) => ({
+          id: address.id || `address-${index}`,
+          FullName: address.FullName || '',
+          Street: address.Street || '',
+          City: address.City || '',
+          State: address.State || '',
+          ZIP: address.ZIP || '',
+          Phone: address.Phone || '',
+          isDefault: address.isDefault || false,
+        }))
+        .sort((a: Address, b: Address) => (a.isDefault ? -1 : b.isDefault ? 1 : 0));
 
-      if (!userDoc.exists()) {
-        console.log("User not found");
-        setLoading(false);
-        setRefreshing(false);
-        return;
-      }
-
-      const userData = userDoc.data();
-      const userAddresses = userData.Address || [];
-
-      const formattedAddresses = userAddresses.map((address: any, index: number) => ({
-        id: address.id || `address-${index}`,
-        FullName: address.FullName || '',
-        Street: address.Street || '',
-        City: address.City || '',
-        State: address.State || '',
-        ZIP: address.ZIP || '',
-        Phone: address.Phone || '',
-        isDefault: address.isDefault || false,
-      }));
-
-      const sortedAddresses = formattedAddresses.sort((a: { isDefault: any; }, b: { isDefault: any; }) => {
-        if (a.isDefault && !b.isDefault) return -1;
-        if (!a.isDefault && b.isDefault) return 1;
-        return 0;
-      });
-
-      setAddresses(sortedAddresses);
+      setAddresses(formattedAddresses);
     } catch (error) {
-      console.error("Error fetching user addresses:", error);
-      setAlertMsg("Failed to load addresses. Please try again.");
-      setAlertType('error');
+      showAlert("Failed to load addresses. Please try again.", 'error');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchUserAddresses();
+  const performAddressOperation = async (operation: () => Promise<boolean>, successMessage: string) => {
+    try {
+      const success = await operation();
+      if (success) {
+        await fetchUserAddresses();
+        showAlert(successMessage);
+        return true;
+      } else {
+        showAlert("Operation failed. Please try again.", 'error');
+        return false;
+      }
+    } catch (error) {
+      showAlert("Operation failed. Please try again.", 'error');
+      return false;
+    }
+  };
+
+  const confirmDeleteAddress = async () => {
+    if (!selectedAddressId) return;
+
+    setDeleteLoading(true);
+    const success = await performAddressOperation(
+      async () => {
+        const userAddresses = await getUserAddresses();
+        if (!userAddresses) return false;
+        const filteredAddresses = userAddresses.filter((addr: any) => addr.id !== selectedAddressId);
+        return await updateUserAddresses(filteredAddresses);
+      },
+      "Address deleted successfully"
+    );
+
+    if (success) {
+      setDeleteModalVisible(false);
+    }
+    setDeleteLoading(false);
+    setSelectedAddressId(null);
+  };
+
+  const handleSetDefault = async (id: string) => {
+    const userAddresses = await getUserAddresses();
+    if (!userAddresses) return;
+
+    const addressToUpdate = userAddresses.find((addr: any) => addr.id === id);
+    if (!addressToUpdate) return;
+
+    const isSettingAsDefault = !addressToUpdate.isDefault;
+    
+    await performAddressOperation(
+      async () => {
+        const updatedAddresses = userAddresses.map((addr: any) => ({
+          ...addr,
+          isDefault: addr.id === id ? isSettingAsDefault : false
+        }));
+        return await updateUserAddresses(updatedAddresses);
+      },
+      isSettingAsDefault ? "Default address updated successfully" : "Default address removed"
+    );
+  };
+
+  const handleSubmitAddress = async (formData: Address) => {
+    const userAddresses = await getUserAddresses();
+    if (!userAddresses) return;
+
+    const operation = async () => {
+      let updatedAddresses;
+      
+      if (isEditing) {
+        const existingIndex = userAddresses.findIndex((addr: any) => addr.id === formData.id);
+        if (existingIndex === -1) return false;
+        
+        updatedAddresses = [...userAddresses];
+        updatedAddresses[existingIndex] = {
+          ...formData,
+          isDefault: userAddresses[existingIndex].isDefault
+        };
+      } else {
+        updatedAddresses = [...userAddresses, { ...formData, isDefault: false }];
+      }
+      
+      return await updateUserAddresses(updatedAddresses);
+    };
+
+    const success = await performAddressOperation(
+      operation,
+      `Address ${isEditing ? 'updated' : 'added'} successfully`
+    );
+
+    if (success) {
+      setModalVisible(false);
+      setCurrentAddress(null);
+    }
   };
 
   const handleEdit = (address: Address) => {
@@ -165,236 +249,8 @@ const address = () => {
   };
 
   const handleDelete = (id: string) => {
-    const addressToDelete = addresses.find(addr => addr.id === id);
-    if (addressToDelete) {
-      setSelectedAddressId(id);
-      setDeleteModalVisible(true);
-    }
-  };
-
-  const confirmDeleteAddress = async () => {
-    if (!selectedAddressId) return;
-
-    setDeleteLoading(true);
-    try {
-      await deleteAddress(selectedAddressId);
-      setDeleteModalVisible(false);
-    } catch (error) {
-      console.error("Error in confirm delete:", error);
-    } finally {
-      setDeleteLoading(false);
-      setSelectedAddressId(null);
-    }
-  };
-
-  const deleteAddress = async (id: string) => {
-    try {
-      setLoading(true);
-      const userId = auth.currentUser?.uid;
-
-      if (!userId) {
-        console.log("No user logged in");
-        setLoading(false);
-        return;
-      }
-
-      const userRef = doc(db, "Users", userId);
-      const userDoc = await getDoc(userRef);
-
-      if (!userDoc.exists()) {
-        console.log("User not found");
-        setLoading(false);
-        return;
-      }
-
-      const userData = userDoc.data();
-      const userAddresses = userData.Address || [];
-
-      const addressToRemove = userAddresses.find((addr: any) => addr.id === id);
-
-      if (!addressToRemove) {
-        console.log("Address not found");
-        setLoading(false);
-        return;
-      }
-
-      console.log("Deleting address:", addressToRemove);
-
-      try {
-        await updateDoc(userRef, {
-          Address: arrayRemove(addressToRemove)
-        });
-        console.log("Address deleted successfully");
-      } catch (removeError) {
-        console.error("Error in arrayRemove operation:", removeError);
-
-        try {
-          console.log("Trying alternate delete approach");
-          const updatedDoc = await getDoc(userRef);
-          const updatedData = updatedDoc.data();
-          const updatedAddresses = updatedData?.Address ?? [];
-
-          const filteredAddresses = updatedAddresses.filter(
-            (addr: any) => addr.id !== id
-          );
-
-          await updateDoc(userRef, {
-            Address: filteredAddresses
-          });
-          console.log("Address deleted using alternate approach");
-        } catch (alternateError) {
-          console.error("Error in alternate delete approach:", alternateError);
-          throw alternateError;
-        }
-      }
-
-      await fetchUserAddresses();
-      setAlertMsg("Address deleted successfully");
-      setAlertType('success');
-    } catch (error) {
-      console.error("Error deleting address:", error);
-      setAlertMsg("Failed to delete address. Please try again.");
-      setAlertType('error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSetDefault = async (id: string) => {
-    try {
-      setLoading(true);
-      const userId = auth.currentUser?.uid;
-
-      if (!userId) {
-        console.log("No user logged in");
-        setLoading(false);
-        return;
-      }
-
-      const userRef = doc(db, "Users", userId);
-      const userDoc = await getDoc(userRef);
-
-      if (!userDoc.exists()) {
-        console.log("User not found");
-        setLoading(false);
-        return;
-      }
-
-      const userData = userDoc.data();
-      const userAddresses = userData.Address || [];
-
-      const addressToUpdate = userAddresses.find((addr: any) => addr.id === id);
-
-      if (!addressToUpdate) {
-        console.log("Address not found");
-        setLoading(false);
-        return;
-      }
-
-      const isSettingAsDefault = !addressToUpdate.isDefault;
-
-      if (isSettingAsDefault) {
-        const currentDefault = userAddresses.find((addr: any) => addr.isDefault && addr.id !== id);
-        if (currentDefault) {
-          const updatedCurrentDefault = { ...currentDefault, isDefault: false };
-
-          await updateDoc(userRef, {
-            Address: arrayRemove(currentDefault)
-          });
-          await updateDoc(userRef, {
-            Address: arrayUnion(updatedCurrentDefault)
-          });
-        }
-      }
-
-      const updatedAddress = { ...addressToUpdate, isDefault: isSettingAsDefault };
-
-      await updateDoc(userRef, {
-        Address: arrayRemove(addressToUpdate)
-      });
-      await updateDoc(userRef, {
-        Address: arrayUnion(updatedAddress)
-      });
-
-      await fetchUserAddresses();
-
-      if (isSettingAsDefault) {
-        setAlertMsg("Default address updated successfully");
-      } else {
-        setAlertMsg("Default address removed");
-      }
-      setAlertType('success');
-    } catch (error) {
-      console.error("Error toggling default address:", error);
-      setAlertMsg("Failed to update default address. Please try again.");
-      setAlertType('error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleUpdateAddress = async (formData: Address) => {
-    try {
-      setLoading(true);
-      const userId = auth.currentUser?.uid;
-
-      if (!userId) {
-        console.log("No user logged in");
-        setLoading(false);
-        return;
-      }
-
-      const userRef = doc(db, "Users", userId);
-      const userDoc = await getDoc(userRef);
-
-      if (!userDoc.exists()) {
-        console.log("User not found");
-        setLoading(false);
-        return;
-      }
-
-      const userData = userDoc.data();
-      const userAddresses = userData.Address || [];
-
-      const existingAddress = userAddresses.find((addr: any) => addr.id === formData.id);
-
-      if (!existingAddress) {
-        console.log("Address not found");
-        setLoading(false);
-        return;
-      }
-
-      const updatedAddress = {
-        id: formData.id,
-        FullName: formData.FullName,
-        Street: formData.Street,
-        City: formData.City,
-        State: formData.State,
-        ZIP: formData.ZIP,
-        Phone: formData.Phone,
-        isDefault: existingAddress.isDefault
-      };
-
-      await updateDoc(userRef, {
-        Address: arrayRemove(existingAddress)
-      });
-
-      await updateDoc(userRef, {
-        Address: arrayUnion(updatedAddress)
-      });
-
-      await fetchUserAddresses();
-      setModalVisible(false);
-      setCurrentAddress(null);
-      setAlertMsg("Address updated successfully");
-      setAlertType('success');
-    } catch (error) {
-      console.error("Error updating address:", error);
-      setAlertMsg("Failed to update address. Please try again.");
-      setAlertType('error');
-    } finally {
-      setLoading(false);
-    }
+    setSelectedAddressId(id);
+    setDeleteModalVisible(true);
   };
 
   const handleAddNew = () => {
@@ -403,74 +259,15 @@ const address = () => {
     setModalVisible(true);
   };
 
-  const handleCreateAddress = async (formData: Address) => {
-    try {
-      setLoading(true);
-      const userId = auth.currentUser?.uid;
-
-      if (!userId) {
-        console.log("No user logged in");
-        setLoading(false);
-        return;
-      }
-
-      const userRef = doc(db, "Users", userId);
-      const userDoc = await getDoc(userRef);
-
-      if (!userDoc.exists()) {
-        console.log("User not found");
-        setLoading(false);
-        return;
-      }
-
-      const newAddress = {
-        id: formData.id,
-        FullName: formData.FullName,
-        Street: formData.Street,
-        City: formData.City,
-        State: formData.State,
-        ZIP: formData.ZIP,
-        Phone: formData.Phone,
-        isDefault: false
-      };
-
-      await updateDoc(userRef, {
-        Address: arrayUnion(newAddress)
-      });
-
-      await fetchUserAddresses();
-      setModalVisible(false);
-      setAlertMsg("New address added successfully");
-      setAlertType('success');
-    } catch (error) {
-      console.error("Error adding address:", error);
-      setAlertMsg("Failed to add address. Please try again.");
-      setAlertType('error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSubmitAddress = async (formData: Address) => {
-    if (isEditing) {
-      await handleUpdateAddress(formData);
-    } else {
-      await handleCreateAddress(formData);
-    }
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchUserAddresses();
   };
 
   return (
     <>
-      <Stack.Screen
-        name="address"
-        options={{
-          headerShown: false
-        }}
-      />
-      <LinearGradient
-        colors={['white', '#FFE4C4']}
-        style={styles.container}
-      >
+      <Stack.Screen name="address" options={{ headerShown: false }} />
+      <LinearGradient colors={['white', '#FFE4C4']} style={styles.container}>
         {alertMsg && (
           <MiniAlert
             message={alertMsg}
@@ -494,8 +291,7 @@ const address = () => {
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => { router.back() }}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            onPress={() => router.back()}
           >
             <Ionicons name="arrow-back-circle-outline" size={36} color="#5D4037" />
           </TouchableOpacity>
@@ -587,13 +383,11 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '600',
     color: '#4E342E',
-    textAlign: 'center',
   },
   backButton: {
     position: 'absolute',
     left: 15,
     top: 55,
-    zIndex: 10,
   },
   addressList: {
     flex: 1,
@@ -705,99 +499,6 @@ const styles = StyleSheet.create({
   bottomSpace: {
     height: 80,
   },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  modalContent: {
-    backgroundColor: 'white',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 22,
-    height: '90%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-    paddingBottom: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#EADDD0',
-    marginBottom: 20,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#5D4037',
-  },
-  closeButton: {
-    position: 'absolute',
-    left: 0,
-    padding: 5,
-  },
-  formContainer: {
-    flex: 1,
-    marginBottom: 20,
-  },
-  formGroup: {
-    marginBottom: 16,
-  },
-  formLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#5D4037',
-    marginBottom: 6,
-  },
-  formInput: {
-    backgroundColor: '#F5F5F5',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-  },
-  formRow: {
-    flexDirection: 'row',
-    marginBottom: 16,
-  },
-  noteContainer: {
-    backgroundColor: '#FFF8E1',
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 10,
-    marginBottom: 10,
-    borderLeftWidth: 4,
-    borderLeftColor: '#FFB300',
-  },
-  noteText: {
-    fontSize: 14,
-    color: '#795548',
-    lineHeight: 18,
-  },
-  submitButton: {
-    backgroundColor: '#5D4037',
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 4,
-  },
-  submitButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -811,4 +512,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default address;
+export default Address;

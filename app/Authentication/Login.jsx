@@ -127,7 +127,7 @@ const Login = () => {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={styles.button1}>
+        <TouchableOpacity style={styles.button1} onPress={()=> router.push('/(tabs)/profile')}>
           <FontAwesome name='google' size={30} style={styles.icon}></FontAwesome>
 
           <Text style={styles.button1text}>Continue With Google</Text>

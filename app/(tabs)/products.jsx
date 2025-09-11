@@ -1,24 +1,32 @@
-import React, { useEffect, useState } from "react";
-import { View, Text, Image, StyleSheet, FlatList, Dimensions, TouchableOpacity, TextInput } from 'react-native';
 import { useRouter } from 'expo-router';
+import React, { useEffect, useState } from "react";
+import { Dimensions, FlatList, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Icon from "react-native-vector-icons/Feather";
+import {
+  createDocumentWithId,
+  getCollection,
+  getDocument,
+  onAuthStateChange,
+  updateDocument
+} from '../../Firebase/Firebase';
+import MiniAlert from '../../components/MiniAlert';
+
 const { width } = Dimensions.get('window');
 const cardWidth = (width / 2) - 24;
-import { db, auth } from '../../Firebase/Firebase';
-import { collection, onSnapshot, setDoc, doc, getDoc, updateDoc, increment } from "firebase/firestore";
-import MiniAlert from '../../components/MiniAlert';
 
 const ProductList = () => {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [products, setProducts] = useState([]);
-  const currentUser = auth.currentUser;
-  const applyDiscount = (price, discountPercentage) => {
-    return Math.floor(price - (price * discountPercentage) / 100);
-  };
+  const [currentUser, setCurrentUser] = useState(null);
   const [alertMsg, setAlertMsg] = useState(null);
   const [alertType, setAlertType] = useState('success');
   const [load, setLoad] = useState(false);
+
+  const applyDiscount = (price, discountPercentage) => {
+    return Math.floor(price - (price * discountPercentage) / 100);
+  };
+
   const showAlert = (message, type = 'success') => {
     setLoad(true);
     setAlertMsg(message);
@@ -28,43 +36,44 @@ const ProductList = () => {
       setLoad(false);
     }, 3000);
   };
+
   const filteredProducts = products.filter((item) =>
     item.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
-  useEffect(() => {
 
-    const unsubscribe = onSnapshot(collection(db, "products"), (snapshot) => {
-      const usersData = snapshot.docs.map((doc) => ({
-        docId: doc.id, ...doc.data(),
-      }));
-      setProducts(usersData);
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChange((user) => {
+      setCurrentUser(user);
     });
 
-    return () => unsubscribe();
+    const fetchProducts = async () => {
+      const result = await getCollection("products");
+      if (result.success) {
+        setProducts(result.data);
+      }
+    };
+
+    fetchProducts();
+    return () => unsubscribeAuth();
   }, []);
-  console.log("Data:", products);
 
   const handleAddToCart = async (item) => {
     if (!currentUser) {
       showAlert('Please sign in to add products to your shopping cart', 'error');
-      setTimeout(() => {
-        router.replace("/Login");
-      }, 3000);
       return;
     }
 
     try {
-      const cartDocRef = doc(db, 'Users', currentUser.uid, 'cart', item.docId);
-      const cartDocSnap = await getDoc(cartDocRef);
-
-      if (cartDocSnap.exists()) {
-        await updateDoc(cartDocRef, {
-          quantity: increment(1),
+      const cartResult = await getDocument('Users', `${currentUser.uid}/cart/${item.id}`);
+      
+      if (cartResult.success) {
+        await updateDocument('Users', `${currentUser.uid}/cart/${item.id}`, {
+          quantity: cartResult.data.quantity + 1,
           updatedAt: new Date(),
         });
       } else {
-        await setDoc(cartDocRef, {
-          productId: item.docId,
+        await createDocumentWithId('Users', `${currentUser.uid}/cart/${item.id}`, {
+          productId: item.id,
           name: item.name,
           price: item.price,
           image: item.image,
@@ -73,13 +82,14 @@ const ProductList = () => {
           createdAt: new Date(),
         });
       }
+      
       showAlert(`${String(item.name).split(' ').slice(0, 2).join(' ')} Added to your shopping cart`, 'success');
 
     } catch (error) {
-      console.error("Error adding to cart:", error);
       showAlert('Failed to add product to cart. Please try again.', 'error');
     }
   };
+
   return (
     <View style={styles.container}>
       {alertMsg && (
@@ -98,9 +108,9 @@ const ProductList = () => {
       />
       <FlatList
         data={filteredProducts}
-        keyExtractor={(item) => item.docId}
+        keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <TouchableOpacity onPress={() => router.push({ pathname: "/singlepage", params: { id: item.docId } })} disabled={load}>
+          <TouchableOpacity onPress={() => router.push({ pathname: "/singlepage", params: { id: item.id } })} disabled={load}>
             <View style={styles.card}>
               <Image source={{ uri: item.image }} style={styles.image} />
               <View style={styles.textContainer}>
