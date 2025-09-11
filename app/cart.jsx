@@ -1,10 +1,10 @@
-import { View, Text, StyleSheet, Image, TouchableOpacity, Alert, ActivityIndicator, FlatList } from 'react-native';
-import React, { useEffect, useState, useRef } from 'react';
-import { useRouter } from 'expo-router';
-import { collection, getDocs, doc, getDoc, deleteDoc, updateDoc, arrayUnion } from "firebase/firestore";
-import { db } from "../Firebase/Firebase.jsx";
-import { getAuth } from "firebase/auth";
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { getAuth } from "firebase/auth";
+import { arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, updateDoc } from "firebase/firestore";
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { db } from "../Firebase/Firebase.jsx";
 // import LottieView from 'lottie-react-native';
 import MiniAlert from '../components/MiniAlert';
 const CartScreen = () => {
@@ -105,43 +105,49 @@ const CartScreen = () => {
     try {
       const cartRef = collection(db, "Users", user.uid, "cart");
       const snapshot = await getDocs(cartRef);
-
-
+  
       const cartItems = [];
-      snapshot.forEach((doc) => {
+      snapshot.forEach((docSnap) => {
         cartItems.push({
-          id: doc.id,
-          ...doc.data()
+          ...docSnap.data(),
         });
       });
-
+  
       if (cartItems.length === 0) {
-        showAlert('Cart is empty", "There are no items to checkout.', 'error');
+        showAlert("Cart is empty, there are no items to checkout.", "error");
         return;
       }
-
+  
       const userDocRef = doc(db, "Users", user.uid);
-
-
+  
+      // هيكل الأوردر الجديد
+      const newOrder = {
+        createdAt: new Date().toISOString(), // وقت إنشاء الأوردر
+        OrderedProducts: cartItems
+      };
+  
+      // إضافة الأوردر في مصفوفة Orders
       await updateDoc(userDocRef, {
-        Orders: cartItems,
-        Orders: arrayUnion(...cartItems)
+        Orders: arrayUnion(newOrder)
       });
-
-      setIsCheckoutComplete(true)
-
-      snapshot.forEach(async (doc) => {
-        await deleteDoc(doc.ref);
-      });
-
-
+  
+      setIsCheckoutComplete(true);
+  
+      // مسح السلة بعد الشراء
+      await Promise.all(snapshot.docs.map(docSnap =>
+        deleteDoc(doc(db, "Users", user.uid, "cart", docSnap.id))
+      ));
+  
       setCart([]);
-
+  
     } catch (error) {
       console.error("Error during checkout:", error);
-      showAlert('Could not complete checkout. Please try again.', 'error');
+      showAlert("Could not complete checkout. Please try again.", "error");
     }
   };
+  
+
+
   const applyDiscount = (price, discountPercentage) => {
     return Math.floor(price - (price * discountPercentage) / 100);
   };

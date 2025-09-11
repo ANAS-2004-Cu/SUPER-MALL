@@ -16,7 +16,7 @@ import { auth, getUserData } from '../../Firebase/Firebase';
 import { darkTheme, lightTheme } from '../../Theme/ProfileTabs/OrdersTheme';
 
 interface Product {
-  id: string;
+  id?: string;
   name?: string;
   price?: number;
   image?: string;
@@ -25,8 +25,15 @@ interface Product {
   discount?: number;
 }
 
+interface Order {
+  id: string;
+  createdAt: string;
+  OrderedProducts: Product[];
+  orderTotal: number;
+}
+
 const Orders = () => {
-  const [products, setProducts] = useState<Product[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalSpent, setTotalSpent] = useState(0);
   const [theme, setTheme] = useState(lightTheme);
@@ -57,6 +64,10 @@ const Orders = () => {
     return subtotal - (subtotal * discount / 100);
   };
 
+  const calculateOrderTotal = (products: Product[]) => {
+    return products.reduce((acc, product) => acc + calculateProductTotal(product), 0);
+  };
+
   const fetchUserOrders = async () => {
     const userId = auth.currentUser?.uid;
     if (!userId) {
@@ -70,26 +81,34 @@ const Orders = () => {
       const userOrders = userData?.Orders || [];
 
       if (!userOrders.length) {
-        setProducts([]);
+        setOrders([]);
         setLoading(false);
         return;
       }
 
-      const ordersData = userOrders.map((order: any) => ({
-        id: order.id || order.productId || Math.random().toString(),
-        name: order.name,
-        price: order.price,
-        image: order.image,
-        description: order.description,
-        quantity: order.quantity || 1,
-        discount: order.discount || 0
-      }));
+      const ordersData = userOrders.map((order: any, index: number) => {
+        const orderedProducts = order.OrderedProducts || [];
+        const orderTotal = calculateOrderTotal(orderedProducts);
 
-      const total = ordersData.reduce((acc: number, product: Product) => 
-        acc + calculateProductTotal(product), 0
-      );
+        return {
+          id: order.id || `order_${index}`,
+          createdAt: order.createdAt || 'Unknown date',
+          OrderedProducts: orderedProducts.map((product: any, productIndex: number) => ({
+            id: product.id || `product_${index}_${productIndex}`,
+            name: product.name,
+            price: product.price,
+            image: product.image,
+            description: product.description,
+            quantity: product.quantity || 1,
+            discount: product.discount || 0
+          })),
+          orderTotal
+        };
+      });
 
-      setProducts(ordersData);
+      const total = ordersData.reduce((acc: number, order: Order) => acc + order.orderTotal, 0);
+
+      setOrders(ordersData);
       setTotalSpent(total);
     } catch (error) {
       console.error("Error fetching user orders:", error);
@@ -105,9 +124,20 @@ const Orders = () => {
     });
   };
 
+  const formatDate = (dateString: string) => {
+    if (dateString === 'egsopjpgjeps0949' || dateString === 'Unknown date') {
+      return 'Order Date Not Available';
+    }
+    try {
+      return new Date(dateString).toLocaleDateString();
+    } catch {
+      return dateString;
+    }
+  };
+
   const renderProductItem = ({ item }: { item: Product }) => {
     const hasDiscount = item.discount && item.discount > 0;
-    const discountedPrice = hasDiscount 
+    const discountedPrice = hasDiscount
       ? item.price! - (item.price! * item.discount! / 100)
       : item.price;
 
@@ -116,9 +146,9 @@ const Orders = () => {
 
     return (
       <TouchableOpacity
-        style={[styles.productCard, { backgroundColor: theme.cardBackground }]}
+        style={[styles.productItem, { backgroundColor: theme.cardBackground }]}
         activeOpacity={0.8}
-        onPress={() => navigateToProductDetail(item.id)}
+        onPress={() => navigateToProductDetail(item.id || '')}
       >
         <View style={styles.productContent}>
           <View style={styles.imageContainer}>
@@ -130,70 +160,84 @@ const Orders = () => {
               />
             ) : (
               <View style={[styles.productImage, styles.noProductImage, { backgroundColor: theme.noImageBackground }]}>
-                <MaterialIcons name="image-not-supported" size={30} color={theme.iconColorSecondary} />
+                <MaterialIcons name="image-not-supported" size={24} color={theme.iconColorSecondary} />
               </View>
             )}
-            <View style={[styles.orderStatusContainer, { backgroundColor: theme.orderStatusBackground }]}>
-              <Ionicons name="checkmark-circle" size={14} color={theme.iconColorSuccess} />
-              <Text style={[styles.orderStatusText, { color: theme.textSuccess }]}>Delivered</Text>
-            </View>
           </View>
 
           <View style={styles.productDetails}>
-            <Text style={[styles.productName, { color: theme.textPrimary }]} numberOfLines={1}>{item.name}</Text>
-            <Text style={[styles.productDescription, { color: theme.textSecondary }]} numberOfLines={2}>
+            <Text style={[styles.productName, { color: theme.textPrimary }]} numberOfLines={1}>
+              {item.name || 'Unnamed Product'}
+            </Text>
+            <Text style={[styles.productDescription, { color: theme.textSecondary }]} numberOfLines={1}>
               {item.description || 'No description available'}
             </Text>
 
-            <View style={[styles.detailsContainer, { backgroundColor: theme.detailsBackground }]}>
-              <View style={styles.detailRow}>
-                <View style={styles.detailLabelContainer}>
-                  <FontAwesome name="tag" size={14} color={theme.iconColorPrimary} />
-                  <Text style={[styles.detailLabel, { color: theme.detailLabelColor }]}>Price:</Text>
-                </View>
-
-                {hasDiscount ? (
-                  <View style={styles.discountContainer}>
-                    <Text style={[styles.originalPrice, { color: theme.originalPriceColor }]}>${item.price?.toFixed(2)}</Text>
-                    <View style={styles.discountInfoContainer}>
-                      <Text style={[styles.discountedPrice, { color: theme.discountedPriceColor }]}>${discountedPrice?.toFixed(2)}</Text>
-                      <View style={[styles.discountBadgeContainer, { backgroundColor: theme.discountBadgeBackground }]}>
-                        <Text style={[styles.discountBadgeText, { color: theme.discountTextColor }]}>{item.discount}% OFF</Text>
-                      </View>
-                    </View>
+            <View style={styles.priceQuantityRow}>
+              {hasDiscount ? (
+                <View style={styles.discountContainer}>
+                  <Text style={[styles.originalPrice, { color: theme.originalPriceColor }]}>
+                    ${item.price?.toFixed(2)}
+                  </Text>
+                  <Text style={[styles.discountedPrice, { color: theme.discountedPriceColor }]}>
+                    ${discountedPrice?.toFixed(2)}
+                  </Text>
+                  <View style={[styles.discountBadge, { backgroundColor: theme.discountBadgeBackground }]}>
+                    <Text style={[styles.discountBadgeText, { color: theme.discountTextColor }]}>
+                      {item.discount}% OFF
+                    </Text>
                   </View>
-                ) : (
-                  <Text style={[styles.regularPrice, { color: theme.priceColor }]}>${item.price?.toFixed(2)}</Text>
-                )}
-              </View>
-
-              <View style={styles.detailRow}>
-                <View style={styles.detailLabelContainer}>
-                  <Ionicons name="cart-outline" size={15} color={theme.iconColorPrimary} />
-                  <Text style={[styles.detailLabel, { color: theme.detailLabelColor }]}>Quantity:</Text>
                 </View>
-                <View style={[styles.quantityBadge, { backgroundColor: theme.quantityBadgeBackground }]}>
-                  <Text style={[styles.quantityText, { color: theme.quantityTextColor }]}>{item.quantity}</Text>
-                </View>
-              </View>
+              ) : (
+                <Text style={[styles.regularPrice, { color: theme.priceColor }]}>
+                  ${item.price?.toFixed(2)}
+                </Text>
+              )}
 
-              <View style={[styles.subtotalContainer, { borderTopColor: theme.separatorColor }]}>
-                <Text style={[styles.subtotalLabel, { color: theme.subtotalLabelColor }]}>Subtotal:</Text>
-                {hasDiscount ? (
-                  <View style={styles.subtotalValues}>
-                    <Text style={[styles.originalSubtotal, { color: theme.originalPriceColor }]}>${subtotal.toFixed(2)}</Text>
-                    <Text style={[styles.subtotalValue, { color: theme.subtotalValueColor }]}>${discountedSubtotal.toFixed(2)}</Text>
-                  </View>
-                ) : (
-                  <Text style={[styles.subtotalValue, { color: theme.subtotalValueColor }]}>${subtotal.toFixed(2)}</Text>
-                )}
+              <View style={[styles.quantityBadge, { backgroundColor: theme.quantityBadgeBackground }]}>
+                <Text style={[styles.quantityText, { color: theme.quantityTextColor }]}>
+                  Qty: {item.quantity}
+                </Text>
               </View>
             </View>
+
+            <Text style={[styles.subtotalText, { color: theme.subtotalValueColor }]}>
+              Subtotal: ${discountedSubtotal.toFixed(2)}
+            </Text>
           </View>
         </View>
       </TouchableOpacity>
     );
   };
+
+  const renderOrderItem = ({ item }: { item: Order }) => (
+    <View style={[styles.orderCard, { backgroundColor: theme.cardBackground }]}>
+      <View style={styles.orderHeader}>
+        <View style={styles.orderInfo}>
+          <Text style={[styles.orderDate, { color: theme.textPrimary }]}>
+            {formatDate(item.createdAt)}
+          </Text>
+          <View style={[styles.orderStatusContainer, { backgroundColor: theme.orderStatusBackground }]}>
+            <Ionicons name="checkmark-circle" size={16} color={theme.iconColorSuccess} />
+            <Text style={[styles.orderStatusText, { color: theme.textSuccess }]}>Delivered</Text>
+          </View>
+        </View>
+        <Text style={[styles.orderTotal, { color: theme.subtotalValueColor }]}>
+          Total: ${item.orderTotal.toFixed(2)}
+        </Text>
+      </View>
+
+      <Text style={[styles.productsHeader, { color: theme.textSecondary }]}>
+        {item.OrderedProducts.length} {item.OrderedProducts.length === 1 ? 'Product' : 'Products'}
+      </Text>
+
+      {item.OrderedProducts.map((product, index) => (
+        <View key={product.id || index}>
+          {renderProductItem({ item: product })}
+        </View>
+      ))}
+    </View>
+  );
 
   return (
     <>
@@ -213,13 +257,13 @@ const Orders = () => {
           <Text style={[styles.title, { color: theme.titleColor }]}>My Orders</Text>
         </View>
 
-        {!loading && products.length > 0 && (
+        {!loading && orders.length > 0 && (
           <View style={[styles.orderSummary, { backgroundColor: theme.summarySectionBackground }]}>
             <View style={styles.summaryContent}>
               <View style={styles.summaryItem}>
                 <MaterialIcons name="shopping-bag" size={24} color={theme.iconColorTertiary} />
                 <Text style={[styles.summaryText, { color: theme.textPrimary }]}>
-                  {products.length} {products.length === 1 ? 'Order' : 'Orders'}
+                  {orders.length} {orders.length === 1 ? 'Order' : 'Orders'}
                 </Text>
               </View>
               <View style={[styles.summarySeparator, { backgroundColor: theme.separatorColor }]} />
@@ -238,7 +282,7 @@ const Orders = () => {
             <ActivityIndicator size="large" color={theme.iconColorTertiary} />
             <Text style={[styles.loadingText, { color: theme.loadingTextColor }]}>Fetching your orders...</Text>
           </View>
-        ) : products.length === 0 ? (
+        ) : orders.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Ionicons name="receipt-outline" size={80} color={theme.emptyIconColor} style={styles.emptyIcon} />
             <Text style={[styles.emptyTitle, { color: theme.emptyTitleColor }]}>No Orders Yet</Text>
@@ -253,8 +297,8 @@ const Orders = () => {
           </View>
         ) : (
           <FlatList
-            data={products}
-            renderItem={renderProductItem}
+            data={orders}
+            renderItem={renderOrderItem}
             keyExtractor={item => item.id}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
@@ -372,146 +416,133 @@ const styles = StyleSheet.create({
     paddingTop: 5,
     paddingBottom: 30,
   },
-  productCard: {
-    marginBottom: 18,
+  orderCard: {
+    marginBottom: 20,
     borderRadius: 16,
+    padding: 16,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.2,
     shadowRadius: 5,
     elevation: 4,
-    overflow: 'hidden',
+  },
+  orderHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  orderInfo: {
+    flex: 1,
+  },
+  orderDate: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  orderStatusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+  },
+  orderStatusText: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  orderTotal: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  productsHeader: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginBottom: 12,
+  },
+  productItem: {
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.05)',
   },
   productContent: {
     flexDirection: 'row',
-    padding: 12,
   },
   imageContainer: {
-    position: 'relative',
     marginRight: 12,
   },
   productImage: {
-    width: 100,
-    height: 110,
-    borderRadius: 12,
+    width: 60,
+    height: 60,
+    borderRadius: 8,
   },
   noProductImage: {
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  orderStatusContainer: {
-    position: 'absolute',
-    bottom: 8,
-    left: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  orderStatusText: {
-    fontSize: 11,
-    fontWeight: '600',
-    marginLeft: 4,
   },
   productDetails: {
     flex: 1,
     justifyContent: 'space-between',
   },
   productName: {
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: '600',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   productDescription: {
-    fontSize: 13,
-    marginBottom: 8,
-    lineHeight: 18,
-  },
-  detailsContainer: {
-    borderRadius: 10,
-    padding: 10,
-    marginTop: 4,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    fontSize: 12,
     marginBottom: 6,
   },
-  detailLabelContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  detailLabel: {
-    fontSize: 13,
-    fontWeight: '500',
-    marginLeft: 5,
-  },
-  regularPrice: {
-    fontSize: 15,
-    fontWeight: 'bold',
-  },
-  discountContainer: {
-    alignItems: 'flex-end',
-  },
-  originalPrice: {
-    fontSize: 14,
-    textDecorationLine: 'line-through',
-    marginRight: 5,
-  },
-  discountInfoContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  discountedPrice: {
-    fontSize: 15,
-    fontWeight: 'bold',
-  },
-  discountBadgeContainer: {
-    borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    marginLeft: 6,
-  },
-  discountBadgeText: {
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  quantityBadge: {
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    minWidth: 36,
-    alignItems: 'center',
-  },
-  quantityText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  subtotalContainer: {
+  priceQuantityRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 8,
-    marginTop: 4,
-    borderTopWidth: 1,
+    marginBottom: 4,
   },
-  subtotalLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  subtotalValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  subtotalValues: {
+  discountContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
   },
-  originalSubtotal: {
-    fontSize: 13,
+  originalPrice: {
+    fontSize: 12,
     textDecorationLine: 'line-through',
-    marginRight: 5,
+    marginRight: 6,
+  },
+  discountedPrice: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginRight: 6,
+  },
+  discountBadge: {
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  discountBadgeText: {
+    fontSize: 9,
+    fontWeight: 'bold',
+  },
+  regularPrice: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    flex: 1,
+  },
+  quantityBadge: {
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  quantityText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  subtotalText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
 });
 
