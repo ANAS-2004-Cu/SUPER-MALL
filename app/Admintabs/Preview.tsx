@@ -1,29 +1,29 @@
+import { Ionicons } from '@expo/vector-icons';
+import Entypo from '@expo/vector-icons/Entypo';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { collection, deleteDoc, doc, getDocs } from 'firebase/firestore';
+import React, { useEffect, useState } from 'react';
 import {
-    View,
-    Text,
-    TextInput,
-    StyleSheet,
+    ActivityIndicator,
     FlatList,
     Image,
-    TouchableOpacity,
-    ActivityIndicator,
     Keyboard,
     LayoutAnimation,
-    ScrollView,
+    ListRenderItemInfo,
     RefreshControl,
-    ListRenderItemInfo
-  } from 'react-native';
-  import React, { useEffect, useState } from 'react';
-  import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-  import FontAwesome from '@expo/vector-icons/FontAwesome';
-  import { db } from '../../Firebase/Firebase';
-  import { collection, deleteDoc, doc, getDocs } from 'firebase/firestore';
-  import Entypo from '@expo/vector-icons/Entypo';
-  import MiniAlert from '../../components/MiniAlert';
-  import { LinearGradient } from 'expo-linear-gradient';
-  import { Ionicons } from '@expo/vector-icons';
-  import DeleteModal from '../../components/DeleteModal';
-  import EditProductModal from '../../components/EditProductModal';
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
+} from 'react-native';
+import { db } from '../../Firebase/Firebase';
+import DeleteModal from '../../Modal/DeleteModal';
+import EditProductModal from '../../components/EditProductModal';
+import MiniAlert from '../../components/MiniAlert';
   
   interface Product {
     id: string;

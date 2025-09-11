@@ -1,22 +1,22 @@
+import { Feather, FontAwesome, Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Stack } from 'expo-router';
+import { collection, deleteDoc, doc, getDocs, updateDoc } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import {
-    View,
-    Text,
-    FlatList,
-    StyleSheet,
-    TouchableOpacity,
     ActivityIndicator,
+    FlatList,
     Image,
     RefreshControl,
-    TextInput
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
-import { collection, getDocs, updateDoc, deleteDoc, doc } from 'firebase/firestore';
-import { db, auth } from '../../Firebase/Firebase';
-import { Ionicons, MaterialIcons, FontAwesome, Feather } from '@expo/vector-icons';
-import { Stack } from 'expo-router';
 import MiniAlert from '../../components/MiniAlert';
-import DeleteModal from '../../components/DeleteModal';
-import { LinearGradient } from 'expo-linear-gradient';
+import { auth, db } from '../../Firebase/Firebase';
+import DeleteModal from '../../Modal/DeleteModal';
 
 interface User {
     id: string;

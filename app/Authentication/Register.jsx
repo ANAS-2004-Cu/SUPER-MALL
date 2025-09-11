@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Dimensions, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import MiniAlert from '../../components/MiniAlert';
-import { createQuery, getCollection, signUp,getUserData } from '../../Firebase/Firebase';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createQuery, getCollection, getUserData, signUp } from '../../Firebase/Firebase';
+import { darkTheme, lightTheme } from '../../Theme/Auth/RegisterTheme';
 
 const Register = () => {
   const [username, setUsername] = useState('');
@@ -15,8 +16,27 @@ const Register = () => {
   const [showpass, setshowpass] = useState(true);
   const [alertMsg, setAlertMsg] = useState(null);
   const [alertType, setAlertType] = useState('success');
+  const [theme, setTheme] = useState(lightTheme);
 
   const router = useRouter();
+
+  // Load theme preference from AsyncStorage
+  useEffect(() => {
+    const loadTheme = async () => {
+      try {
+        const themeMode = await AsyncStorage.getItem('ThemeMode');
+        if (themeMode === '2') {
+          setTheme(darkTheme);
+        } else {
+          setTheme(lightTheme);
+        }
+      } catch (error) {
+        console.error('Error loading theme:', error);
+      }
+    };
+    
+    loadTheme();
+  }, []);
 
   const showAlert = (message, type = 'success') => {
     setAlertMsg(message);
@@ -94,7 +114,7 @@ const Register = () => {
   }
 
   return (
-    <View style={styles.fl}>
+    <View style={[styles.fl, { backgroundColor: theme.backgroundColor }]}>
       {alertMsg && (
         <MiniAlert
           message={alertMsg}
@@ -104,32 +124,53 @@ const Register = () => {
       )}
 
       <View style={styles.container}>
-        <TouchableOpacity style={styles.backbut} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="black" />
+        <TouchableOpacity 
+          style={[styles.backbut, { backgroundColor: theme.backButtonBackground }]} 
+          onPress={() => router.back()}
+        >
+          <Ionicons name="arrow-back" size={24} color={theme.iconColor} />
         </TouchableOpacity>
-        <Text style={styles.title}>Create Account</Text>
-        <TextInput placeholder="Username" style={styles.input} value={username} onChangeText={setUsername} />
-        <TextInput placeholder="Email Address" style={styles.input} value={email} onChangeText={setEmail} keyboardType="email-address" />
+        <Text style={[styles.title, { color: theme.textColor }]}>Create Account</Text>
+        <TextInput 
+          placeholder="Username" 
+          style={[styles.input, { backgroundColor: theme.inputBackground, color: theme.textColor }]} 
+          value={username} 
+          onChangeText={setUsername}
+          placeholderTextColor={theme.textColor === 'white' ? '#AAA' : '#666'} 
+        />
+        <TextInput 
+          placeholder="Email Address" 
+          style={[styles.input, { backgroundColor: theme.inputBackground, color: theme.textColor }]} 
+          value={email} 
+          onChangeText={setEmail} 
+          keyboardType="email-address"
+          placeholderTextColor={theme.textColor === 'white' ? '#AAA' : '#666'} 
+        />
         <View style={styles.pass}>
-          <TextInput style={styles.passinput} placeholder="Password" secureTextEntry={showpass} value={password} onChangeText={setPassword} />
+          <TextInput 
+            style={[styles.passinput, { backgroundColor: theme.inputBackground, color: theme.textColor }]} 
+            placeholder="Password" 
+            secureTextEntry={showpass} 
+            value={password} 
+            onChangeText={setPassword}
+            placeholderTextColor={theme.textColor === 'white' ? '#AAA' : '#666'} 
+          />
           {password.length > 0 && <TouchableOpacity style={styles.passbutt} onPress={() => setshowpass(!showpass)}>
-            <Icon name={showpass ? 'eye-slash' : 'eye'} size={24} color="black" />
+            <Icon name={showpass ? 'eye-slash' : 'eye'} size={24} color={theme.iconColor} />
           </TouchableOpacity>}
         </View>
-        <TouchableOpacity style={styles.button} onPress={handleRegister} disabled={loading}>
-          <Text style={styles.buttonText}>Register</Text>
+        <TouchableOpacity 
+          style={[styles.button, { backgroundColor: theme.buttonBackground }]} 
+          onPress={handleRegister} 
+          disabled={loading}
+        >
+          <Text style={[styles.buttonText, { color: theme.textColor }]}>Register</Text>
         </TouchableOpacity>
-        <View style={styles.semif}>
-          <Text style={styles.text}>Forgot Password?</Text>
-          <TouchableOpacity style={styles.createButton} onPress={() => router.push('/Authentication/ForgetPass')}>
-            <Text style={styles.createButtonText}>Reset</Text>
-          </TouchableOpacity>
-        </View>
       </View>
       {loading && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color="white" />
-          <Text style={styles.loadingText}>Creating your account...</Text>
+        <View style={[styles.loadingOverlay, { backgroundColor: theme.loadingOverlayBackground }]}>
+          <ActivityIndicator size="large" color={theme.loadingTextColor} />
+          <Text style={[styles.loadingText, { color: theme.loadingTextColor }]}>Creating your account...</Text>
         </View>
       )}
     </View>
@@ -157,7 +198,6 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     paddingHorizontal: 10,
     marginBottom: Dimensions.get('window').height * 0.01,
-    zIndex: -1,
   },
   passbutt: {
     marginHorizontal: -40,
@@ -190,23 +230,6 @@ const styles = StyleSheet.create({
   buttonText: {
     color: 'black',
     fontWeight: 'bold',
-  },
-  text: {
-    marginTop: Dimensions.get('window').height * 0.015,
-  },
-  createButton: {
-    marginTop: Dimensions.get('window').height * 0.015,
-  },
-  createButtonText: {
-    fontWeight: 'bold',
-    color: 'black',
-  },
-  semif: {
-    width: '95%',
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-    alignItems: 'flex-start',
-    marginTop: Dimensions.get('window').height * 0.01,
   },
   backbut: {
     paddingTop: 4,

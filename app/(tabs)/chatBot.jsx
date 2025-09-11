@@ -1,14 +1,14 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, ActivityIndicator } from 'react-native';
-import axios from 'axios';
-import context from '../ChatBot/context';
 import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, AppState, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
-
+import { darkTheme, lightTheme } from '../../Theme/Tabs/ChatBotTheme';
+import context from '../ChatBot/context';
 
 const GOOGLE_API_KEY = 'AIzaSyDN0TUfk_ll_ADfxtCVByEzUsEPAiZhhvA';
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_API_KEY}`;
-
 
 const suggestions = [
   "What's your return and exchange policy?",
@@ -20,12 +20,42 @@ const suggestions = [
   "Which products are on sale right now?"
 ];
 
-
 export default function GeminiChat() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(true);
+  const [theme, setTheme] = useState(lightTheme);
+  const [appState, setAppState] = useState(AppState.currentState);
+
+  // Function to check and update theme
+  const checkTheme = async () => {
+    const themeMode = await AsyncStorage.getItem("ThemeMode");
+    setTheme(themeMode === "2" ? darkTheme : lightTheme);
+  };
+
+  useEffect(() => {
+    // Initial theme fetch
+    checkTheme();
+    
+    // Set up listeners for app state changes
+    const subscription = AppState.addEventListener("change", nextAppState => {
+      if (appState.match(/inactive|background/) && nextAppState === "active") {
+        // App has come to the foreground - check theme
+        checkTheme();
+      }
+      setAppState(nextAppState);
+    });
+    
+    // Set up a periodic check for theme changes
+    const themeCheckInterval = setInterval(checkTheme, 1000);
+    
+    // Clean up
+    return () => {
+      subscription.remove();
+      clearInterval(themeCheckInterval);
+    };
+  }, [appState]);
 
   const sendMessage = async () => {
     if (!input.trim()) return;
@@ -82,24 +112,26 @@ export default function GeminiChat() {
       item.role === 'user' ? styles.userRow : styles.botRow
     ]}>
       {item.role === 'assistant' && (
-        <FontAwesome5 name="robot" size={24} color="black" />
+        <FontAwesome5 name="robot" size={24} color={theme.robotIcon.color} />
       )}
       <View style={[
         styles.bubble,
-        item.role === 'user' ? styles.userBubble : styles.botBubble
+        item.role === 'user' 
+          ? [styles.userBubble, theme.userBubble] 
+          : [styles.botBubble, theme.botBubble]
       ]}>
-        <Text style={styles.bubbleText}>{item.content}</Text>
+        <Text style={[styles.bubbleText, theme.bubbleText]}>{item.content}</Text>
       </View>
       {item.role === 'user' && (
-        <Icon name="person-circle" size={24} color="#444" style={styles.icon} />
+        <Icon name="person-circle" size={24} color={theme.userIcon.color} style={styles.icon} />
       )}
     </View>
   );
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, theme.container]}>
       <View style={styles.headerContainer}>
-        <Text style={styles.headerText}>I&apos;m here for you, anytime!</Text>
+        <Text style={[styles.headerText, theme.headerText]}>I&apos;m here for you, anytime!</Text>
       </View>
       <FlatList
         data={messages}
@@ -115,34 +147,34 @@ export default function GeminiChat() {
               <TouchableOpacity
                 key={index}
                 onPress={() => handleSuggestionPress(text)}
-                style={styles.suggestionButton}
+                style={[styles.suggestionButton, theme.suggestionButton]}
               >
-                <Text style={styles.suggestionText}>{text}</Text>
+                <Text style={[styles.suggestionText, theme.suggestionText]}>{text}</Text>
               </TouchableOpacity>
             ))}
           </View>
         </View>
       )}
 
-      <View style={styles.inputContainer}>
+      <View style={[styles.inputContainer, theme.inputContainer]}>
         <TextInput
-          style={styles.input}
+          style={[styles.input, theme.input]}
           value={input}
           onChangeText={setInput}
           placeholder="Type your message..."
-          placeholderTextColor="#757575"
+          placeholderTextColor={theme === darkTheme ? "#8a8a8a" : "#757575"}
           editable={!loading}
         />
 
         {loading ? (
-          <ActivityIndicator style={styles.loader} color="#FFAB91" />
+          <ActivityIndicator style={styles.loader} color={theme.loader.color} />
         ) : (
           <TouchableOpacity
-            style={styles.sendButton}
+            style={[styles.sendButton, theme.sendButton]}
             onPress={sendMessage}
             disabled={!input.trim()}
           >
-            <Icon name="send" size={24} color="#FFFFFF" />
+            <Icon name="send" size={24} color={theme.sendIcon.color} />
           </TouchableOpacity>
         )}
       </View>
@@ -164,18 +196,15 @@ const styles = StyleSheet.create({
   },
   icon: {
     marginHorizontal: 6,
-  }
-  ,
+  },
   header: {
     paddingVertical: 16,
     alignItems: 'center',
-    backgroundColor: 'rgb(124, 124, 124)',
     borderRadius: 200,
     marginBottom: 12
   },
   container: {
     flex: 1,
-    backgroundColor: 'ffffff',
     padding: 16
   },
   messagesContainer: {
@@ -189,16 +218,13 @@ const styles = StyleSheet.create({
   },
   userBubble: {
     alignSelf: 'flex-end',
-    backgroundColor: "rgb(141, 141, 141)",
     borderBottomRightRadius: 0
   },
   botBubble: {
     alignSelf: 'flex-start',
-    backgroundColor: '#f5e1d7',
     borderBottomLeftRadius: 0
   },
   bubbleText: {
-    color: 'black',
     fontSize: 16
   },
   inputContainer: {
@@ -206,38 +232,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
-    backgroundColor: '#FFF',
     padding: 8,
     borderRadius: 24
   },
   input: {
     flex: 1,
     borderWidth: 1,
-    borderColor: '#BDBDBD',
     borderRadius: 24,
     paddingHorizontal: 16,
     paddingVertical: 10,
     marginRight: 8,
     fontSize: 16,
-    color: '#212121'
   },
   sendButton: {
-    backgroundColor: 'rgb(66, 64, 64)',
     borderRadius: 24,
     padding: 10,
   },
   loader: {
     marginHorizontal: 8,
-    color: '#FFAB91',
   },
   suggestionsTitle: {
     fontWeight: 'bold',
     marginBottom: 5,
-    color: '#444',
   },
   suggestionButton: {
-    backgroundColor: '#E0F2F1',
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: 15,
@@ -245,7 +263,6 @@ const styles = StyleSheet.create({
     marginBottom: 6
   },
   suggestionText: {
-    color: '#00796B',
     fontSize: 14
   },
   headerContainer: {
@@ -256,7 +273,6 @@ const styles = StyleSheet.create({
   headerText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#333',
     textAlign: 'center',
     paddingHorizontal: 10,
   },
@@ -269,5 +285,4 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'space-between',
   },
-
 });

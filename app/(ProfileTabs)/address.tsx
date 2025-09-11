@@ -1,11 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { auth, getDocument, updateDocument } from '../../Firebase/Firebase';
-import AddressModal from '../../components/AddressModal';
-import DeleteModal from '../../components/DeleteModal';
+import { darkTheme, lightTheme } from '../../Theme/ProfileTabs/AddressTheme';
+import AddressModal from '../../Modal/AddressModal';
+import DeleteModal from '../../Modal/DeleteModal';
 import MiniAlert from '../../components/MiniAlert';
 
 interface Address {
@@ -24,44 +26,53 @@ interface AddressCardProps {
   onEdit: (address: Address) => void;
   onDelete: (id: string) => void;
   onSetDefault: (id: string) => void;
+  theme: any;
 }
 
-const AddressCard: React.FC<AddressCardProps> = ({ address, onEdit, onDelete, onSetDefault }) => {
+const AddressCard: React.FC<AddressCardProps> = ({ address, onEdit, onDelete, onSetDefault, theme }) => {
   return (
-    <View style={styles.addressCard}>
+    <View style={[styles.addressCard, { backgroundColor: theme.cardBackgroundColor }]}>
       <View style={styles.addressContent}>
         <View style={styles.addressHeader}>
-          <Text style={styles.addressName}>{address.FullName}</Text>
+          <Text style={[styles.addressName, { color: theme.cardNameColor }]}>
+            {address.FullName}
+          </Text>
           {address.isDefault && (
-            <View style={styles.defaultBadge}>
-              <Text style={styles.defaultText}>Default</Text>
+            <View style={[styles.defaultBadge, { backgroundColor: theme.defaultBadgeColor }]}>
+              <Text style={[styles.defaultText, { color: theme.defaultTextColor }]}>Default</Text>
             </View>
           )}
         </View>
 
-        <Text style={styles.addressDetail}>{address.Street}</Text>
-        <Text style={styles.addressDetail}>{`${address.City}, ${address.State} ${address.ZIP}`}</Text>
-        <Text style={styles.addressDetail}>{address.Phone}</Text>
+        <Text style={[styles.addressDetail, { color: theme.cardDetailColor }]}>
+          {address.Street}
+        </Text>
+        <Text style={[styles.addressDetail, { color: theme.cardDetailColor }]}>
+          {`${address.City}, ${address.State} ${address.ZIP}`}
+        </Text>
+        <Text style={[styles.addressDetail, { color: theme.cardDetailColor }]}>
+          {address.Phone}
+        </Text>
       </View>
 
-      <View style={styles.addressActions}>
+      <View style={[styles.addressActions, { borderTopColor: theme.borderTopColor }]}>
         <TouchableOpacity onPress={() => onEdit(address)} style={styles.actionButton}>
-          <Ionicons name="create-outline" size={20} color="#5D4037" />
-          <Text style={styles.actionText}>Edit</Text>
+          <Ionicons name="create-outline" size={20} color={theme.actionTextColor} />
+          <Text style={[styles.actionText, { color: theme.actionTextColor }]}>Edit</Text>
         </TouchableOpacity>
 
         <TouchableOpacity onPress={() => onDelete(address.id)} style={styles.actionButton}>
-          <Ionicons name="trash-outline" size={20} color="#FF5252" />
-          <Text style={[styles.actionText, { color: '#FF5252' }]}>Delete</Text>
+          <Ionicons name="trash-outline" size={20} color={theme.actionWarningColor} />
+          <Text style={[styles.actionText, { color: theme.actionWarningColor }]}>Delete</Text>
         </TouchableOpacity>
 
         <TouchableOpacity onPress={() => onSetDefault(address.id)} style={styles.actionButton}>
           <Ionicons
             name={address.isDefault ? "star" : "star-outline"}
             size={20}
-            color="#FFB300"
+            color={theme.actionFavoriteColor}
           />
-          <Text style={[styles.actionText, { color: '#FFB300' }]}>
+          <Text style={[styles.actionText, { color: theme.actionFavoriteColor }]}>
             {address.isDefault ? "Remove Default" : "Set as Default"}
           </Text>
         </TouchableOpacity>
@@ -70,11 +81,15 @@ const AddressCard: React.FC<AddressCardProps> = ({ address, onEdit, onDelete, on
   );
 };
 
-const EmptyAddresses = () => (
+const EmptyAddresses = ({ theme }: { theme: any }) => (
   <View style={styles.emptyContainer}>
-    <Ionicons name="location-outline" size={80} color="#CCCCCC" />
-    <Text style={styles.emptyText}>No saved addresses</Text>
-    <Text style={styles.emptySubtext}>Add a new address for faster checkout</Text>
+    <Ionicons name="location-outline" size={80} color={theme.emptyIconColor} />
+    <Text style={[styles.emptyText, { color: theme.emptyTextColor }]}>
+      No saved addresses
+    </Text>
+    <Text style={[styles.emptySubtext, { color: theme.emptySubtextColor }]}>
+      Add a new address for faster checkout
+    </Text>
   </View>
 );
 
@@ -90,8 +105,19 @@ const Address = () => {
   const [currentAddress, setCurrentAddress] = useState<Address | null>(null);
   const [alertMsg, setAlertMsg] = useState<string | null>(null);
   const [alertType, setAlertType] = useState<'success' | 'error'>('success');
+  const [theme, setTheme] = useState(lightTheme);
 
   useEffect(() => {
+    const loadTheme = async () => {
+      try {
+        const themeMode = await AsyncStorage.getItem('ThemeMode');
+        setTheme(themeMode === '2' ? darkTheme : lightTheme);
+      } catch (error) {
+        console.error('Error loading theme:', error);
+      }
+    };
+    
+    loadTheme();
     fetchUserAddresses();
   }, []);
 
@@ -267,7 +293,7 @@ const Address = () => {
   return (
     <>
       <Stack.Screen name="address" options={{ headerShown: false }} />
-      <LinearGradient colors={['white', '#FFE4C4']} style={styles.container}>
+      <LinearGradient colors={theme.gradientColors  as [string, string, ...string[]]} style={styles.container}>
         {alertMsg && (
           <MiniAlert
             message={alertMsg}
@@ -288,20 +314,22 @@ const Address = () => {
             : undefined}
         />
 
-        <View style={styles.header}>
+        <View style={[styles.header, { borderBottomColor: theme.borderBottomColor }]}>
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => router.back()}
           >
-            <Ionicons name="arrow-back-circle-outline" size={36} color="#5D4037" />
+            <Ionicons name="arrow-back-circle-outline" size={36} color={theme.backButtonColor} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>My Addresses</Text>
+          <Text style={[styles.headerTitle, { color: theme.headerTitleColor }]}>My Addresses</Text>
         </View>
 
         {loading && !refreshing ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#8D6E63" />
-            <Text style={styles.loadingText}>Loading your addresses...</Text>
+            <ActivityIndicator size="large" color={theme.loadingIndicatorColor} />
+            <Text style={[styles.loadingText, { color: theme.loadingTextColor }]}>
+              Loading your addresses...
+            </Text>
           </View>
         ) : addresses.length > 0 ? (
           <ScrollView
@@ -311,8 +339,8 @@ const Address = () => {
               <RefreshControl
                 refreshing={refreshing}
                 onRefresh={onRefresh}
-                colors={['#8D6E63']}
-                tintColor="#8D6E63"
+                colors={[theme.loadingIndicatorColor]}
+                tintColor={theme.loadingIndicatorColor}
               />
             }
           >
@@ -323,6 +351,7 @@ const Address = () => {
                 onEdit={handleEdit}
                 onDelete={handleDelete}
                 onSetDefault={handleSetDefault}
+                theme={theme}
               />
             ))}
             <View style={styles.bottomSpace} />
@@ -334,22 +363,24 @@ const Address = () => {
               <RefreshControl
                 refreshing={refreshing}
                 onRefresh={onRefresh}
-                colors={['#8D6E63']}
-                tintColor="#8D6E63"
+                colors={[theme.loadingIndicatorColor]}
+                tintColor={theme.loadingIndicatorColor}
               />
             }
           >
-            <EmptyAddresses />
+            <EmptyAddresses theme={theme} />
           </ScrollView>
         )}
 
         <TouchableOpacity
-          style={styles.addButton}
+          style={[styles.addButton, { backgroundColor: theme.addButtonBackgroundColor }]}
           onPress={handleAddNew}
           disabled={loading}
         >
-          <Ionicons name="add" size={24} color="white" />
-          <Text style={styles.addButtonText}>Add New Address</Text>
+          <Ionicons name="add" size={24} color={theme.addButtonTextColor} />
+          <Text style={[styles.addButtonText, { color: theme.addButtonTextColor }]}>
+            Add New Address
+          </Text>
         </TouchableOpacity>
 
         <AddressModal
@@ -377,12 +408,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(109, 76, 65, 0.2)',
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: '600',
-    color: '#4E342E',
   },
   backButton: {
     position: 'absolute',
@@ -400,7 +429,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   addressCard: {
-    backgroundColor: 'white',
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
@@ -422,29 +450,24 @@ const styles = StyleSheet.create({
   addressName: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#5D4037',
   },
   defaultBadge: {
-    backgroundColor: '#4CAF50',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
   },
   defaultText: {
-    color: 'white',
     fontSize: 12,
     fontWeight: 'bold',
   },
   addressDetail: {
     fontSize: 16,
-    color: '#5D4037',
     marginBottom: 4,
   },
   addressActions: {
     flexDirection: 'row',
     justifyContent: 'flex-start',
     borderTopWidth: 1,
-    borderTopColor: '#EADDD0',
     paddingTop: 10,
   },
   actionButton: {
@@ -455,13 +478,11 @@ const styles = StyleSheet.create({
   actionText: {
     marginLeft: 4,
     fontSize: 14,
-    color: '#5D4037',
   },
   addButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#5D4037',
     borderRadius: 50,
     paddingVertical: 16,
     marginHorizontal: 16,
@@ -473,7 +494,6 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   addButtonText: {
-    color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
     marginLeft: 8,
@@ -487,12 +507,10 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#5D4037',
     marginTop: 16,
   },
   emptySubtext: {
     fontSize: 16,
-    color: '#8D6E63',
     textAlign: 'center',
     marginTop: 8,
   },
@@ -505,7 +523,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loadingText: {
-    color: '#6D4C41',
     marginTop: 15,
     fontSize: 16,
     fontWeight: '500',

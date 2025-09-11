@@ -6,6 +6,7 @@ import { Stack, router } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Dimensions, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { auth, createQuery, getCollection, getUserData, updateDocument } from '../../Firebase/Firebase';
+import { darkTheme, lightTheme } from '../../Theme/ProfileTabs/EditProfileTheme';
 import MiniAlert from '../../components/MiniAlert';
 
 const { width } = Dimensions.get('window');
@@ -21,8 +22,22 @@ const EditProfile = () => {
   const [load, setLoad] = useState<boolean>(false);
   const [imageSourceModalVisible, setImageSourceModalVisible] = useState<boolean>(false);
   const [errors, setErrors] = useState<{ username?: string; fullname?: string; phone?: string; }>({});
+  const [theme, setTheme] = useState(lightTheme);
 
   const IMGBB_API_KEY = "5f368fdc294d3cd3ddc0b0e9297a10fb";
+
+  useEffect(() => {
+    const loadTheme = async () => {
+      try {
+        const themeMode = await AsyncStorage.getItem('ThemeMode');
+        setTheme(themeMode === '2' ? darkTheme : lightTheme);
+      } catch (error) {
+        console.error('Error loading theme:', error);
+      }
+    };
+    
+    loadTheme();
+  }, []);
 
   const showAlert = (message: string, type: 'success' | 'error', duration = 3000) => {
     setAlertMessage(message);
@@ -162,15 +177,20 @@ const EditProfile = () => {
         onPress={validateAndUpdate}
         disabled={load}
       >
-        <Animated.View style={[styles.button, { transform: [{ scale: scaleAnim }] }]}>
+        <Animated.View style={[styles.button, { 
+          backgroundColor: theme.buttonColor,
+          transform: [{ scale: scaleAnim }] 
+        }]}>
           {load ? (
             <ActivityIndicator color="#fff" size="small" style={{ marginRight: 10 }} />
           ) : (
             <View style={styles.iconContainer}>
-              <MaterialIcons name="save" size={24} color="#fff" />
+              <MaterialIcons name="save" size={24} color={theme.buttonTextColor} />
             </View>
           )}
-          <Text style={styles.buttonText}>{load ? "Saving..." : "Save Changes"}</Text>
+          <Text style={[styles.buttonText, { color: theme.buttonTextColor }]}>
+            {load ? "Saving..." : "Save Changes"}
+          </Text>
         </Animated.View>
       </TouchableWithoutFeedback>
     );
@@ -198,7 +218,7 @@ const EditProfile = () => {
             onHide={() => setAlertMessage(null)}
           />
         )}
-        <LinearGradient colors={['#f9f9f9', '#f0e6dd', '#e8d0c0']} style={styles.gradientContainer}>
+        <LinearGradient colors={theme.gradientColors  as [string, string, ...string[]]} style={styles.gradientContainer}>
           <KeyboardAvoidingView
             behavior={Platform.OS === "ios" ? "padding" : "height"}
             style={{ flex: 1 }}
@@ -214,21 +234,23 @@ const EditProfile = () => {
                 onPress={() => router.back()}
                 hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
               >
-                <Ionicons name="arrow-back-circle-outline" size={46} color="#5D4037" />
+                <Ionicons name="arrow-back-circle-outline" size={46} color={theme.backButtonColor} />
               </TouchableOpacity>
 
               <View style={{ alignItems: 'center', width: '100%' }}>
-                <Text style={styles.title}>Edit Profile</Text>
-                <View style={styles.underline} />
+                <Text style={[styles.title, { color: theme.titleColor }]}>Edit Profile</Text>
+                <View style={[styles.underline, { backgroundColor: theme.underlineColor }]} />
 
                 <View style={styles.profileImageContainer}>
                   <TouchableOpacity onPress={() => setImageSourceModalVisible(true)} style={styles.imageWrapper}>
                     <Image source={{ uri: image || userData?.image }} style={styles.logo} />
-                    <View style={styles.editBadge}>
+                    <View style={[styles.editBadge, { backgroundColor: theme.editBadgeColor }]}>
                       <Ionicons name="camera" size={20} color="white" />
                     </View>
                   </TouchableOpacity>
-                  <Text style={styles.changePhotoText}>Tap to change profile photo</Text>
+                  <Text style={[styles.changePhotoText, { color: theme.changePhotoTextColor }]}>
+                    Tap to change profile photo
+                  </Text>
                 </View>
 
                 <View style={styles.formContainer}>
@@ -238,23 +260,42 @@ const EditProfile = () => {
                     { label: "Phone Number", value: num, setter: setNum, placeholder: userData?.phone, icon: "phone", error: errors.phone, keyboardType: "phone-pad" }
                   ].map((field, index) => (
                     <View key={index} style={styles.inputGroup}>
-                      <Text style={styles.inputLabel}>{field.label}</Text>
-                      <View style={styles.inputWrapper}>
+                      <Text style={[styles.inputLabel, { color: theme.inputLabelColor }]}>
+                        {field.label}
+                      </Text>
+                      <View style={[styles.inputWrapper, { 
+                        borderColor: theme.inputBorderColor,
+                        backgroundColor: theme.inputBackgroundColor
+                      }]}>
                         {field.icon === "account" ? (
-                          <MaterialCommunityIcons name="account" size={24} color="#8B5E3C" style={styles.inputIcon} />
+                          <MaterialCommunityIcons 
+                            name="account" 
+                            size={24} 
+                            color={theme.inputIconColor} 
+                            style={styles.inputIcon} 
+                          />
                         ) : (
-                          <MaterialIcons name={field.icon as any} size={24} color="#8B5E3C" style={styles.inputIcon} />
+                          <MaterialIcons 
+                            name={field.icon as any} 
+                            size={24} 
+                            color={theme.inputIconColor} 
+                            style={styles.inputIcon} 
+                          />
                         )}
                         <TextInput
-                          style={styles.inputbox}
+                          style={[styles.inputbox, { color: theme.inputTextColor }]}
                           placeholder={field.placeholder || `Enter ${field.label.toLowerCase()}`}
                           onChangeText={field.setter}
-                          placeholderTextColor="#8B8B8B"
+                          placeholderTextColor={theme.placeholderColor}
                           autoCapitalize={field.label === "Username" ? "none" : "words"}
                           keyboardType={field.keyboardType as any}
                         />
                       </View>
-                      {field.error && <Text style={styles.errorText}>{field.error}</Text>}
+                      {field.error && (
+                        <Text style={[styles.errorText, { color: theme.errorTextColor }]}>
+                          {field.error}
+                        </Text>
+                      )}
                     </View>
                   ))}
                 </View>
@@ -270,30 +311,43 @@ const EditProfile = () => {
               onRequestClose={() => setImageSourceModalVisible(false)}
             >
               <TouchableWithoutFeedback onPress={() => setImageSourceModalVisible(false)}>
-                <View style={styles.imageSourceModalOverlay}>
+                <View style={[styles.imageSourceModalOverlay, { 
+                  backgroundColor: theme.modalOverlayColor 
+                }]}>
                   <TouchableWithoutFeedback>
-                    <View style={styles.imageSourceModalContent}>
-                      <Text style={styles.imageSourceModalTitle}>Change Profile Picture</Text>
+                    <View style={[styles.imageSourceModalContent, { 
+                      backgroundColor: theme.modalBackgroundColor 
+                    }]}>
+                      <Text style={[styles.imageSourceModalTitle, { color: theme.modalTitleColor }]}>
+                        Change Profile Picture
+                      </Text>
 
                       <View style={styles.imageSourceOptions}>
                         {[
-                          { title: "Gallery", icon: "photo", onPress: () => pickImage(false), colors: ['#8B5E3C', '#A87C5F'] as const },
-                          { title: "Camera", icon: "camera", onPress: () => pickImage(true), colors: ['#5D4037', '#8B6B61'] as const }
+                          { title: "Gallery", icon: "photo", onPress: () => pickImage(false), colors: theme.optionGradient1 },
+                          { title: "Camera", icon: "camera", onPress: () => pickImage(true), colors: theme.optionGradient2 }
                         ].map((option, index) => (
                           <TouchableOpacity key={index} style={styles.imageSourceOption} onPress={option.onPress}>
-                            <LinearGradient colors={option.colors} style={styles.optionIconContainer}>
+                            <LinearGradient colors={option.colors  as [string, string, ...string[]]} style={styles.optionIconContainer}>
                               <FontAwesome name={option.icon as any} size={28} color="white" />
                             </LinearGradient>
-                            <Text style={styles.imageSourceOptionText}>{option.title}</Text>
+                            <Text style={[styles.imageSourceOptionText, { color: theme.optionTextColor }]}>
+                              {option.title}
+                            </Text>
                           </TouchableOpacity>
                         ))}
                       </View>
 
                       <TouchableOpacity
-                        style={styles.imageSourceCancelButton}
+                        style={[styles.imageSourceCancelButton, {
+                          backgroundColor: theme.cancelButtonBackgroundColor,
+                          borderColor: theme.cancelButtonBorderColor
+                        }]}
                         onPress={() => setImageSourceModalVisible(false)}
                       >
-                        <Text style={styles.imageSourceCancelText}>Cancel</Text>
+                        <Text style={[styles.imageSourceCancelText, { color: theme.cancelTextColor }]}>
+                          Cancel
+                        </Text>
                       </TouchableOpacity>
                     </View>
                   </TouchableWithoutFeedback>
@@ -320,14 +374,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#4A3222',
     marginTop: 20,
     marginBottom: 5,
     fontFamily: Platform.OS === 'ios' ? 'Avenir-Heavy' : 'sans-serif-medium',
   },
   underline: {
     height: 4,
-    backgroundColor: '#8B5E3C',
     width: 100,
     marginBottom: 30,
     borderRadius: 2,
@@ -355,7 +407,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 5,
     right: 5,
-    backgroundColor: '#8B5E3C',
     borderRadius: 20,
     padding: 8,
     alignItems: 'center',
@@ -368,7 +419,6 @@ const styles = StyleSheet.create({
   },
   changePhotoText: {
     marginTop: 10,
-    color: '#8B5E3C',
     fontSize: 14,
     fontStyle: 'italic',
   },
@@ -383,16 +433,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 8,
-    color: '#5D4037',
     paddingLeft: 5,
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#D7CCC8',
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -408,10 +455,8 @@ const styles = StyleSheet.create({
     height: 54,
     paddingHorizontal: 10,
     fontSize: 16,
-    color: '#333',
   },
   errorText: {
-    color: '#D32F2F',
     fontSize: 12,
     marginTop: 5,
     marginLeft: 5,
@@ -428,7 +473,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 15,
     paddingHorizontal: 30,
-    backgroundColor: '#8B5E3C',
     borderRadius: 30,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
@@ -439,7 +483,6 @@ const styles = StyleSheet.create({
     bottom: 30,
   },
   buttonText: {
-    color: '#FFFFFF',
     fontWeight: 'bold',
     fontSize: 18,
   },
@@ -448,13 +491,11 @@ const styles = StyleSheet.create({
   },
   imageSourceModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   imageSourceModalContent: {
     width: width * 0.85,
-    backgroundColor: 'white',
     borderRadius: 20,
     padding: 25,
     alignItems: 'center',
@@ -468,7 +509,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 25,
-    color: '#4A3222',
     fontFamily: Platform.OS === 'ios' ? 'Avenir-Heavy' : 'sans-serif-medium',
   },
   imageSourceOptions: {
@@ -494,20 +534,16 @@ const styles = StyleSheet.create({
   imageSourceOptionText: {
     marginTop: 10,
     fontSize: 16,
-    color: '#5D4037',
     fontWeight: '600',
   },
   imageSourceCancelButton: {
     paddingVertical: 12,
     paddingHorizontal: 30,
-    backgroundColor: '#F5F5F5',
     borderRadius: 25,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
   },
   imageSourceCancelText: {
     fontSize: 16,
-    color: '#5D4037',
     fontWeight: 'bold',
   },
 })

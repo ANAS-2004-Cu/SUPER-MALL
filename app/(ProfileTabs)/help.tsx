@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, router } from 'expo-router';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Linking,
   ScrollView,
@@ -10,31 +11,33 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import { darkTheme, lightTheme } from '../../Theme/ProfileTabs/HelpTheme';
 
 interface HelpTopicItemProps {
   icon: React.ComponentProps<typeof Ionicons>['name'];
   title: string;
   subtitle: string;
   action?: () => void;
+  theme: any;
 }
 
-const HelpTopicItem: React.FC<HelpTopicItemProps> = ({ icon, title, subtitle, action }) => {
+const HelpTopicItem: React.FC<HelpTopicItemProps> = ({ icon, title, subtitle, action, theme }) => {
   return (
     <View style={{ marginBottom: 12 }}>
       <TouchableOpacity
-        style={styles.topicCard}
+        style={[styles.topicCard, { backgroundColor: theme.cardBackground }]}
         onPress={action}
         activeOpacity={0.8}
       >
-        <View style={styles.topicIconContainer}>
-          <Ionicons name={icon} size={24} color="#5D4037" />
+        <View style={[styles.topicIconContainer, { backgroundColor: theme.topicIconBackground }]}>
+          <Ionicons name={icon} size={24} color={theme.iconColorPrimary} />
         </View>
         <View style={styles.topicContent}>
-          <Text style={styles.topicTitle}>{title}</Text>
-          <Text style={styles.topicSubtitle}>{subtitle}</Text>
+          <Text style={[styles.topicTitle, { color: theme.topicTitleColor }]}>{title}</Text>
+          <Text style={[styles.topicSubtitle, { color: theme.topicSubtitleColor }]}>{subtitle}</Text>
           <View style={styles.viewDetailsContainer}>
-            <Text style={styles.viewDetailsText}>View details</Text>
-            <Ionicons name="chevron-forward" size={16} color="#795548" />
+            <Text style={[styles.viewDetailsText, { color: theme.viewDetailsTextColor }]}>View details</Text>
+            <Ionicons name="chevron-forward" size={16} color={theme.viewDetailsTextColor} />
           </View>
         </View>
       </TouchableOpacity>
@@ -43,10 +46,29 @@ const HelpTopicItem: React.FC<HelpTopicItemProps> = ({ icon, title, subtitle, ac
 };
 
 const Help = () => {
+  const [theme, setTheme] = useState(lightTheme);
+
+  useEffect(() => {
+    loadThemePreference();
+  }, []);
+
+  const loadThemePreference = async () => {
+    try {
+      const themeMode = await AsyncStorage.getItem('ThemeMode');
+      if (themeMode === '2') {
+        setTheme(darkTheme);
+      } else {
+        setTheme(lightTheme);
+      }
+    } catch (error) {
+      console.error('Error loading theme preference:', error);
+    }
+  };
+
   const contactMethods = [
-    { icon: 'call', label: 'Call Us', color: '#66BB6A', action: () => Linking.openURL('tel:+201032672532') },
-    { icon: 'mail', label: 'Email Us', color: '#7986CB', action: () => Linking.openURL('mailto:anslahga2@gmail.com') },
-    { icon: 'logo-whatsapp', label: 'WhatsApp', color: '#25D366', action: () => Linking.openURL('https://wa.me/201032672532') }
+    { icon: 'call', label: 'Call Us', color: theme.callColor, action: () => Linking.openURL('tel:+201032672532') },
+    { icon: 'mail', label: 'Email Us', color: theme.emailColor, action: () => Linking.openURL('mailto:anslahga2@gmail.com') },
+    { icon: 'logo-whatsapp', label: 'WhatsApp', color: theme.whatsappColor, action: () => Linking.openURL('https://wa.me/201032672532') }
   ];
 
   const helpTopics = [
@@ -59,7 +81,7 @@ const Help = () => {
   return (
     <>
       <Stack.Screen name="help" options={{ headerShown: false }} />
-      <LinearGradient colors={['white', '#FFE4C4']} style={styles.container}>
+      <LinearGradient colors={theme.gradientColors  as [string, string, ...string[]]} style={styles.container}>
         <View>
           <View style={styles.header}>
             <TouchableOpacity
@@ -67,10 +89,10 @@ const Help = () => {
               onPress={() => router.back()}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Ionicons name="arrow-back-circle-outline" size={36} color="#5D4037" />
+              <Ionicons name="arrow-back-circle-outline" size={36} color={theme.backButtonColor} />
             </TouchableOpacity>
             <View>
-              <Text style={styles.title}>Help & Support</Text>
+              <Text style={[styles.title, { color: theme.titleColor }]}>Help & Support</Text>
             </View>
           </View>
         </View>
@@ -80,21 +102,21 @@ const Help = () => {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
         >
-          <View style={styles.supportSummary}>
+          <View style={[styles.supportSummary, { backgroundColor: theme.summarySectionBackground }]}>
             <View style={styles.summaryContent}>
               <View style={styles.summaryItem}>
-                <Ionicons name="information-circle" size={24} color="#6D4C41" />
-                <Text style={styles.summaryText}>Help Center</Text>
+                <Ionicons name="information-circle" size={24} color={theme.iconColorPrimary} />
+                <Text style={[styles.summaryText, { color: theme.textPrimary }]}>Help Center</Text>
               </View>
-              <View style={styles.summarySeparator} />
+              <View style={[styles.summarySeparator, { backgroundColor: theme.separatorColor }]} />
               <View style={styles.summaryItem}>
-                <Ionicons name="call" size={22} color="#388E3C" />
-                <Text style={styles.summaryText}>24/7 Support</Text>
+                <Ionicons name="call" size={22} color={theme.iconColorSuccess} />
+                <Text style={[styles.summaryText, { color: theme.textPrimary }]}>24/7 Support</Text>
               </View>
             </View>
           </View>
 
-          <Text style={styles.sectionTitle}>How can we help you?</Text>
+          <Text style={[styles.sectionTitle, { color: theme.sectionTitleColor }]}>How can we help you?</Text>
           <View style={styles.topicsContainer}>
             {helpTopics.map((topic, index) => (
               <HelpTopicItem
@@ -103,19 +125,20 @@ const Help = () => {
                 title={topic.title}
                 subtitle={topic.subtitle}
                 action={() => router.push(topic.route as any)}
+                theme={theme}
               />
             ))}
           </View>
 
-          <View style={styles.contactSection}>
-            <Text style={styles.contactTitle}>Need more help?</Text>
+          <View style={[styles.contactSection, { backgroundColor: theme.cardBackground }]}>
+            <Text style={[styles.contactTitle, { color: theme.textPrimary }]}>Need more help?</Text>
             <View style={styles.contactOptions}>
               {contactMethods.map((method, index) => (
                 <TouchableOpacity key={index} style={styles.contactOption} onPress={method.action}>
                   <View style={[styles.contactIconContainer, { backgroundColor: method.color }]}>
                     <Ionicons name={method.icon as React.ComponentProps<typeof Ionicons>['name']} size={24} color="white" />
                   </View>
-                  <Text style={styles.contactOptionText}>{method.label}</Text>
+                  <Text style={[styles.contactOptionText, { color: theme.textPrimary }]}>{method.label}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -124,12 +147,12 @@ const Help = () => {
 
         <View style={styles.chatButtonContainer}>
           <TouchableOpacity
-            style={styles.chatButton}
+            style={[styles.chatButton, { backgroundColor: theme.chatButtonBackground }]}
             onPress={() => router.replace('../(tabs)/ChatBot')}
             activeOpacity={0.85}
           >
-            <Ionicons name="chatbubble-ellipses" size={24} color="white" />
-            <Text style={styles.chatButtonText}>Start Live Chat Support</Text>
+            <Ionicons name="chatbubble-ellipses" size={24} color={theme.chatButtonTextColor} />
+            <Text style={[styles.chatButtonText, { color: theme.chatButtonTextColor }]}>Start Live Chat Support</Text>
           </TouchableOpacity>
         </View>
       </LinearGradient>
@@ -165,16 +188,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '600',
-    color: '#4E342E',
     textAlign: 'center',
   },
   supportSummary: {
     marginHorizontal: 15,
     marginBottom: 20,
     marginTop: 5,
-    backgroundColor: 'rgba(255, 255, 255, 0.7)',
     borderRadius: 15,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -194,18 +214,15 @@ const styles = StyleSheet.create({
   },
   summaryText: {
     fontSize: 15,
-    color: '#5D4037',
     fontWeight: '500',
   },
   summarySeparator: {
     width: 1,
     height: '60%',
-    backgroundColor: '#D7CCC8',
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#5D4037',
     marginTop: 10,
     marginBottom: 12,
     marginLeft: 15,
@@ -216,10 +233,8 @@ const styles = StyleSheet.create({
   },
   topicCard: {
     flexDirection: 'row',
-    backgroundColor: 'white',
     borderRadius: 12,
     padding: 16,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -229,7 +244,6 @@ const styles = StyleSheet.create({
     width: 46,
     height: 46,
     borderRadius: 23,
-    backgroundColor: '#FAE5D3',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 15,
@@ -240,12 +254,10 @@ const styles = StyleSheet.create({
   topicTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#5D4037',
     marginBottom: 4,
   },
   topicSubtitle: {
     fontSize: 14,
-    color: '#8D6E63',
     marginBottom: 8,
   },
   viewDetailsContainer: {
@@ -254,56 +266,13 @@ const styles = StyleSheet.create({
   },
   viewDetailsText: {
     fontSize: 13,
-    color: '#795548',
     marginRight: 2,
   },
-  faqItem: {
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    backgroundColor: '#F8F8F8',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  faqItemExpanded: {
-    backgroundColor: '#EFEBE9',
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
-  },
-  faqIcon: {
-    marginRight: 10,
-  },
-  faqQuestionContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  faqQuestion: {
-    fontSize: 15,
-    color: '#5D4037',
-    flex: 1,
-  },
-  faqAnswerContainer: {
-    backgroundColor: '#EFEBE9',
-    paddingVertical: 12,
-    paddingHorizontal: 15,
-    paddingLeft: 42,
-    borderBottomLeftRadius: 8,
-    borderBottomRightRadius: 8,
-  },
-  faqAnswer: {
-    fontSize: 14,
-    color: '#6D4C41',
-    lineHeight: 20,
-  },
   contactSection: {
-    backgroundColor: 'white',
     borderRadius: 12,
     padding: 16,
     marginHorizontal: 15,
     marginBottom: 20,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
@@ -312,7 +281,6 @@ const styles = StyleSheet.create({
   contactTitle: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#5D4037',
     marginBottom: 15,
   },
   contactOptions: {
@@ -332,13 +300,7 @@ const styles = StyleSheet.create({
   },
   contactOptionText: {
     fontSize: 14,
-    color: '#5D4037',
     fontWeight: '500',
-  },
-  contactDetailText: {
-    fontSize: 12,
-    color: '#8D6E63',
-    marginTop: 4,
   },
   chatButtonContainer: {
     position: 'absolute',
@@ -349,20 +311,17 @@ const styles = StyleSheet.create({
   },
   chatButton: {
     flexDirection: 'row',
-    backgroundColor: '#4CAF50',
     borderRadius: 28,
     paddingVertical: 15,
     paddingHorizontal: 25,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 5,
     elevation: 5,
   },
   chatButtonText: {
-    color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
     marginLeft: 10,

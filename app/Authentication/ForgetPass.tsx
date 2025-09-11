@@ -1,9 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Dimensions, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import MiniAlert from '../../components/MiniAlert';
 import { resetPassword } from '../../Firebase/Firebase';
+import { darkTheme, lightTheme } from '../../Theme/Auth/ForgetPassTheme';
 
 const ForgetPass = () => {
   const router = useRouter();
@@ -13,6 +15,29 @@ const ForgetPass = () => {
   const [alertMsg, setAlertMsg] = useState<string | null>(null);
   const [alertType, setAlertType] = useState<'success' | 'error'>('success');
   const [load, setLoad] = useState(false);
+  const [theme, setTheme] = useState(lightTheme);
+
+  // Load theme from AsyncStorage
+  useEffect(() => {
+    const loadTheme = async () => {
+      try {
+        const themeMode = await AsyncStorage.getItem('ThemeMode');
+        if (themeMode === '2') {
+          setTheme(darkTheme);
+        } else {
+          setTheme(lightTheme);
+        }
+      } catch (error) {
+        console.error('Error loading theme:', error);
+      }
+    };
+    
+    loadTheme();
+    
+    // Listen for theme changes
+    const intervalId = setInterval(loadTheme, 1000);
+    return () => clearInterval(intervalId);
+  }, []);
 
   const showAlert = (message: React.SetStateAction<string | null>, type: 'success' | 'error') => {
     setLoad(true);
@@ -65,8 +90,85 @@ const ForgetPass = () => {
     router.back();
   }
 
+  // Create styles with the current theme
+  const dynamicStyles = StyleSheet.create({
+    fl: {
+      flex: 1,
+      justifyContent: 'flex-start',
+      alignItems: 'center',
+      width: '100%',
+      backgroundColor: theme.background,
+    },
+    container: {
+      width: '98%',
+      minHeight: Dimensions.get('window').height * 0.3,
+      justifyContent: 'center',
+      alignContent: 'center',
+      alignItems: 'center',
+      marginTop: 25,
+    },
+    button: {
+      width: '95%',
+      height: 53,
+      borderRadius: 100,
+      backgroundColor: theme.primaryButton,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginTop: Dimensions.get('window').height * 0.01,
+    },
+    buttonText: {
+      color: theme.primaryText,
+      fontWeight: 'bold',
+    },
+    input: {
+      width: '95%',
+      height: 40,
+      backgroundColor: theme.inputBackground,
+      borderRadius: 5,
+      paddingHorizontal: 10,
+      marginBottom: Dimensions.get('window').height * 0.01,
+      color: theme.primaryText,
+    },
+    title: {
+      fontSize: 30,
+      fontWeight: 400,
+      marginBottom: Dimensions.get('window').height * 0.02,
+      width: '95%',
+      alignSelf: 'center',
+      color: theme.primaryText,
+    },
+    backbut: {
+      paddingTop: 4,
+      paddingLeft: 5,
+      marginLeft: '2.5%',
+      alignSelf: "flex-start",
+      width: 35,
+      height: 35,
+      borderRadius: 50,
+      backgroundColor: theme.backButtonBackground,
+      marginBottom: 15
+    },
+    loadingOverlay: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: theme.loadingOverlay,
+      justifyContent: 'center',
+      alignItems: 'center',
+      zIndex: 999,
+    },
+    loadingText: {
+      marginTop: 10,
+      color: theme.loadingText,
+      fontSize: 16,
+      fontWeight: '600',
+    },
+  });
+
   return (
-    <View style={styles.fl}>
+    <View style={dynamicStyles.fl}>
       {alertMsg && (
         <MiniAlert
           message={alertMsg}
@@ -74,21 +176,27 @@ const ForgetPass = () => {
           onHide={() => setAlertMsg(null)}
         />
       )}
-      <View style={styles.container}>
-        <TouchableOpacity style={styles.backbut} onPress={back}>
-          <Ionicons name="arrow-back" size={24} color="black" />
+      <View style={dynamicStyles.container}>
+        <TouchableOpacity style={dynamicStyles.backbut} onPress={back}>
+          <Ionicons name="arrow-back" size={24} color={theme.primaryText} />
         </TouchableOpacity>
-        <Text style={styles.title}>Forgot Password</Text>
-        <TextInput placeholder="Email Address" style={styles.input} value={email}
-          onChangeText={setEmail} keyboardType="email-address" />
-        <TouchableOpacity style={styles.button} onPress={handleResetPassword} disabled={load}>
-          <Text style={styles.buttonText}>continue</Text>
+        <Text style={dynamicStyles.title}>Forgot Password</Text>
+        <TextInput 
+          placeholder="Email Address" 
+          style={dynamicStyles.input} 
+          value={email}
+          onChangeText={setEmail} 
+          keyboardType="email-address"
+          placeholderTextColor={theme.primaryText === 'white' ? '#999' : '#555'}
+        />
+        <TouchableOpacity style={dynamicStyles.button} onPress={handleResetPassword} disabled={load}>
+          <Text style={dynamicStyles.buttonText}>continue</Text>
         </TouchableOpacity>
       </View>
       {loading && (
-        <View style={styles.loadingOverlay}>
+        <View style={dynamicStyles.loadingOverlay}>
           <ActivityIndicator size="large" color="white" />
-          <Text style={styles.loadingText}>Sending Reset Password Email...</Text>
+          <Text style={dynamicStyles.loadingText}>Sending Reset Password Email...</Text>
         </View>
       )}
     </View>
@@ -96,77 +204,4 @@ const ForgetPass = () => {
 }
 
 export default ForgetPass
-const styles = StyleSheet.create({
-  container: {
-    width: '98%',
-    minHeight: Dimensions.get('window').height * 0.3,
-    justifyContent: 'center',
-    alignContent: 'center',
-    alignItems: 'center',
-    marginTop: 25,
-  },
-  button: {
-    width: '95%',
-    height: 53,
-    borderRadius: 100,
-    backgroundColor: 'rgb(247, 207, 174)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: Dimensions.get('window').height * 0.01,
-  },
-  buttonText: {
-    color: 'black',
-    fontWeight: 'bold',
-  },
-  input: {
-    width: '95%',
-    height: 40,
-    backgroundColor: 'rgb(226, 226, 226)',
-    borderRadius: 5,
-    paddingHorizontal: 10,
-    marginBottom: Dimensions.get('window').height * 0.01,
-
-  },
-  title: {
-    fontSize: 30,
-    fontWeight: 400,
-    marginBottom: Dimensions.get('window').height * 0.02,
-    width: '95%',
-    alignSelf: 'center',
-  },
-  backbut: {
-    paddingTop: 4,
-    paddingLeft: 5,
-    marginLeft: '2.5%',
-    alignSelf: "flex-start",
-    width: 35,
-    height: 35,
-    borderRadius: 50,
-    backgroundColor: 'rgb(231, 227, 227)',
-    marginBottom: 15
-  },
-  fl: {
-    flex: 1,
-    justifyContent: 'flex-start',
-    alignItems: 'center',
-    width: '100%',
-  },
-  loadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 999,
-  },
-  loadingText: {
-    marginTop: 10,
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-})
 

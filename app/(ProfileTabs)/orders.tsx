@@ -1,4 +1,5 @@
 import { FontAwesome, Ionicons, MaterialIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -12,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { auth, getUserData } from '../../Firebase/Firebase';
+import { darkTheme, lightTheme } from '../../Theme/ProfileTabs/OrdersTheme';
 
 interface Product {
   id: string;
@@ -27,10 +29,25 @@ const Orders = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalSpent, setTotalSpent] = useState(0);
+  const [theme, setTheme] = useState(lightTheme);
 
   useEffect(() => {
     fetchUserOrders();
+    loadThemePreference();
   }, []);
+
+  const loadThemePreference = async () => {
+    try {
+      const themeMode = await AsyncStorage.getItem('ThemeMode');
+      if (themeMode === '2') {
+        setTheme(darkTheme);
+      } else {
+        setTheme(lightTheme);
+      }
+    } catch (error) {
+      console.error('Error loading theme preference:', error);
+    }
+  };
 
   const calculateProductTotal = (product: Product) => {
     const price = product.price || 0;
@@ -99,7 +116,7 @@ const Orders = () => {
 
     return (
       <TouchableOpacity
-        style={styles.productCard}
+        style={[styles.productCard, { backgroundColor: theme.cardBackground }]}
         activeOpacity={0.8}
         onPress={() => navigateToProductDetail(item.id)}
       >
@@ -112,63 +129,63 @@ const Orders = () => {
                 resizeMode="cover"
               />
             ) : (
-              <View style={[styles.productImage, styles.noProductImage]}>
-                <MaterialIcons name="image-not-supported" size={30} color="#a0a0a0" />
+              <View style={[styles.productImage, styles.noProductImage, { backgroundColor: theme.noImageBackground }]}>
+                <MaterialIcons name="image-not-supported" size={30} color={theme.iconColorSecondary} />
               </View>
             )}
-            <View style={styles.orderStatusContainer}>
-              <Ionicons name="checkmark-circle" size={14} color="#4CAF50" />
-              <Text style={styles.orderStatusText}>Delivered</Text>
+            <View style={[styles.orderStatusContainer, { backgroundColor: theme.orderStatusBackground }]}>
+              <Ionicons name="checkmark-circle" size={14} color={theme.iconColorSuccess} />
+              <Text style={[styles.orderStatusText, { color: theme.textSuccess }]}>Delivered</Text>
             </View>
           </View>
 
           <View style={styles.productDetails}>
-            <Text style={styles.productName} numberOfLines={1}>{item.name}</Text>
-            <Text style={styles.productDescription} numberOfLines={2}>
+            <Text style={[styles.productName, { color: theme.textPrimary }]} numberOfLines={1}>{item.name}</Text>
+            <Text style={[styles.productDescription, { color: theme.textSecondary }]} numberOfLines={2}>
               {item.description || 'No description available'}
             </Text>
 
-            <View style={styles.detailsContainer}>
+            <View style={[styles.detailsContainer, { backgroundColor: theme.detailsBackground }]}>
               <View style={styles.detailRow}>
                 <View style={styles.detailLabelContainer}>
-                  <FontAwesome name="tag" size={14} color="#795548" />
-                  <Text style={styles.detailLabel}>Price:</Text>
+                  <FontAwesome name="tag" size={14} color={theme.iconColorPrimary} />
+                  <Text style={[styles.detailLabel, { color: theme.detailLabelColor }]}>Price:</Text>
                 </View>
 
                 {hasDiscount ? (
                   <View style={styles.discountContainer}>
-                    <Text style={styles.originalPrice}>${item.price?.toFixed(2)}</Text>
+                    <Text style={[styles.originalPrice, { color: theme.originalPriceColor }]}>${item.price?.toFixed(2)}</Text>
                     <View style={styles.discountInfoContainer}>
-                      <Text style={styles.discountedPrice}>${discountedPrice?.toFixed(2)}</Text>
-                      <View style={styles.discountBadgeContainer}>
-                        <Text style={styles.discountBadgeText}>{item.discount}% OFF</Text>
+                      <Text style={[styles.discountedPrice, { color: theme.discountedPriceColor }]}>${discountedPrice?.toFixed(2)}</Text>
+                      <View style={[styles.discountBadgeContainer, { backgroundColor: theme.discountBadgeBackground }]}>
+                        <Text style={[styles.discountBadgeText, { color: theme.discountTextColor }]}>{item.discount}% OFF</Text>
                       </View>
                     </View>
                   </View>
                 ) : (
-                  <Text style={styles.regularPrice}>${item.price?.toFixed(2)}</Text>
+                  <Text style={[styles.regularPrice, { color: theme.priceColor }]}>${item.price?.toFixed(2)}</Text>
                 )}
               </View>
 
               <View style={styles.detailRow}>
                 <View style={styles.detailLabelContainer}>
-                  <Ionicons name="cart-outline" size={15} color="#795548" />
-                  <Text style={styles.detailLabel}>Quantity:</Text>
+                  <Ionicons name="cart-outline" size={15} color={theme.iconColorPrimary} />
+                  <Text style={[styles.detailLabel, { color: theme.detailLabelColor }]}>Quantity:</Text>
                 </View>
-                <View style={styles.quantityBadge}>
-                  <Text style={styles.quantityText}>{item.quantity}</Text>
+                <View style={[styles.quantityBadge, { backgroundColor: theme.quantityBadgeBackground }]}>
+                  <Text style={[styles.quantityText, { color: theme.quantityTextColor }]}>{item.quantity}</Text>
                 </View>
               </View>
 
-              <View style={styles.subtotalContainer}>
-                <Text style={styles.subtotalLabel}>Subtotal:</Text>
+              <View style={[styles.subtotalContainer, { borderTopColor: theme.separatorColor }]}>
+                <Text style={[styles.subtotalLabel, { color: theme.subtotalLabelColor }]}>Subtotal:</Text>
                 {hasDiscount ? (
                   <View style={styles.subtotalValues}>
-                    <Text style={styles.originalSubtotal}>${subtotal.toFixed(2)}</Text>
-                    <Text style={styles.subtotalValue}>${discountedSubtotal.toFixed(2)}</Text>
+                    <Text style={[styles.originalSubtotal, { color: theme.originalPriceColor }]}>${subtotal.toFixed(2)}</Text>
+                    <Text style={[styles.subtotalValue, { color: theme.subtotalValueColor }]}>${discountedSubtotal.toFixed(2)}</Text>
                   </View>
                 ) : (
-                  <Text style={styles.subtotalValue}>${subtotal.toFixed(2)}</Text>
+                  <Text style={[styles.subtotalValue, { color: theme.subtotalValueColor }]}>${subtotal.toFixed(2)}</Text>
                 )}
               </View>
             </View>
@@ -182,7 +199,7 @@ const Orders = () => {
     <>
       <Stack.Screen name="orders" options={{ headerShown: false }} />
       <LinearGradient
-        colors={['white', '#FFE4C4']}
+        colors={theme.gradientColors as [string, string, ...string[]]}
         style={styles.container}
       >
         <View style={styles.header}>
@@ -191,24 +208,24 @@ const Orders = () => {
             onPress={() => { router.back() }}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Ionicons name="arrow-back-circle-outline" size={36} color="#5D4037" />
+            <Ionicons name="arrow-back-circle-outline" size={36} color={theme.backButtonColor} />
           </TouchableOpacity>
-          <Text style={styles.title}>My Orders</Text>
+          <Text style={[styles.title, { color: theme.titleColor }]}>My Orders</Text>
         </View>
 
         {!loading && products.length > 0 && (
-          <View style={styles.orderSummary}>
+          <View style={[styles.orderSummary, { backgroundColor: theme.summarySectionBackground }]}>
             <View style={styles.summaryContent}>
               <View style={styles.summaryItem}>
-                <MaterialIcons name="shopping-bag" size={24} color="#6D4C41" />
-                <Text style={styles.summaryText}>
+                <MaterialIcons name="shopping-bag" size={24} color={theme.iconColorTertiary} />
+                <Text style={[styles.summaryText, { color: theme.textPrimary }]}>
                   {products.length} {products.length === 1 ? 'Order' : 'Orders'}
                 </Text>
               </View>
-              <View style={styles.summarySeparator} />
+              <View style={[styles.summarySeparator, { backgroundColor: theme.separatorColor }]} />
               <View style={styles.summaryItem}>
-                <FontAwesome name="dollar" size={20} color="#388E3C" />
-                <Text style={styles.summaryText}>
+                <FontAwesome name="dollar" size={20} color={theme.iconColorSuccess} />
+                <Text style={[styles.summaryText, { color: theme.textPrimary }]}>
                   Total: ${totalSpent.toFixed(2)}
                 </Text>
               </View>
@@ -218,20 +235,20 @@ const Orders = () => {
 
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#8D6E63" />
-            <Text style={styles.loadingText}>Fetching your orders...</Text>
+            <ActivityIndicator size="large" color={theme.iconColorTertiary} />
+            <Text style={[styles.loadingText, { color: theme.loadingTextColor }]}>Fetching your orders...</Text>
           </View>
         ) : products.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <Ionicons name="receipt-outline" size={80} color="#A1887F" style={styles.emptyIcon} />
-            <Text style={styles.emptyTitle}>No Orders Yet</Text>
-            <Text style={styles.emptyText}>Looks like you haven&apos;t placed any orders.</Text>
+            <Ionicons name="receipt-outline" size={80} color={theme.emptyIconColor} style={styles.emptyIcon} />
+            <Text style={[styles.emptyTitle, { color: theme.emptyTitleColor }]}>No Orders Yet</Text>
+            <Text style={[styles.emptyText, { color: theme.emptyTextColor }]}>Looks like you haven&apos;t placed any orders.</Text>
             <TouchableOpacity
-              style={styles.shopButton}
+              style={[styles.shopButton, { backgroundColor: theme.shopButtonBackground }]}
               onPress={() => router.replace('../(tabs)/home')}
               activeOpacity={0.7}
             >
-              <Text style={styles.shopButtonText}>Start Shopping</Text>
+              <Text style={[styles.shopButtonText, { color: theme.shopButtonTextColor }]}>Start Shopping</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -270,16 +287,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '600',
-    color: '#4E342E',
     textAlign: 'center',
   },
   orderSummary: {
     marginHorizontal: 15,
     marginBottom: 20,
     marginTop: 5,
-    backgroundColor: 'rgba(255, 255, 255, 0.7)',
     borderRadius: 15,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -299,13 +313,11 @@ const styles = StyleSheet.create({
   },
   summaryText: {
     fontSize: 15,
-    color: '#5D4037',
     fontWeight: '500',
   },
   summarySeparator: {
     width: 1,
     height: '60%',
-    backgroundColor: '#D7CCC8',
   },
   loadingContainer: {
     flex: 1,
@@ -314,7 +326,6 @@ const styles = StyleSheet.create({
     paddingBottom: 50,
   },
   loadingText: {
-    color: '#6D4C41',
     marginTop: 15,
     fontSize: 16,
     fontWeight: '500',
@@ -333,31 +344,26 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 22,
     fontWeight: '600',
-    color: '#5D4037',
     marginBottom: 10,
   },
   emptyText: {
     fontSize: 16,
-    color: '#795548',
     textAlign: 'center',
     marginBottom: 30,
     lineHeight: 22,
   },
   shopButton: {
-    backgroundColor: '#795548',
     paddingVertical: 15,
     paddingHorizontal: 30,
     borderRadius: 30,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 5,
     elevation: 6,
   },
   shopButtonText: {
-    color: 'white',
     fontWeight: 'bold',
     fontSize: 17,
   },
@@ -369,8 +375,6 @@ const styles = StyleSheet.create({
   productCard: {
     marginBottom: 18,
     borderRadius: 16,
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#9E9E9E',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.2,
     shadowRadius: 5,
@@ -389,12 +393,10 @@ const styles = StyleSheet.create({
     width: 100,
     height: 110,
     borderRadius: 12,
-    backgroundColor: '#F5F5F5',
   },
   noProductImage: {
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#EEEEEE',
   },
   orderStatusContainer: {
     position: 'absolute',
@@ -402,7 +404,6 @@ const styles = StyleSheet.create({
     left: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.85)',
     paddingHorizontal: 6,
     paddingVertical: 3,
     borderRadius: 8,
@@ -410,7 +411,6 @@ const styles = StyleSheet.create({
   orderStatusText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#388E3C',
     marginLeft: 4,
   },
   productDetails: {
@@ -420,17 +420,14 @@ const styles = StyleSheet.create({
   productName: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#3E2723',
     marginBottom: 4,
   },
   productDescription: {
     fontSize: 13,
-    color: '#757575',
     marginBottom: 8,
     lineHeight: 18,
   },
   detailsContainer: {
-    backgroundColor: '#f9f9f9',
     borderRadius: 10,
     padding: 10,
     marginTop: 4,
@@ -447,13 +444,11 @@ const styles = StyleSheet.create({
   },
   detailLabel: {
     fontSize: 13,
-    color: '#795548',
     fontWeight: '500',
     marginLeft: 5,
   },
   regularPrice: {
     fontSize: 15,
-    color: '#4E342E',
     fontWeight: 'bold',
   },
   discountContainer: {
@@ -461,7 +456,6 @@ const styles = StyleSheet.create({
   },
   originalPrice: {
     fontSize: 14,
-    color: '#777',
     textDecorationLine: 'line-through',
     marginRight: 5,
   },
@@ -472,10 +466,8 @@ const styles = StyleSheet.create({
   discountedPrice: {
     fontSize: 15,
     fontWeight: 'bold',
-    color: '#388E3C',
   },
   discountBadgeContainer: {
-    backgroundColor: '#FFEBEE',
     borderRadius: 4,
     paddingHorizontal: 6,
     paddingVertical: 2,
@@ -483,11 +475,9 @@ const styles = StyleSheet.create({
   },
   discountBadgeText: {
     fontSize: 10,
-    color: '#E53935',
     fontWeight: 'bold',
   },
   quantityBadge: {
-    backgroundColor: '#EFEBE9',
     borderRadius: 16,
     paddingHorizontal: 12,
     paddingVertical: 4,
@@ -497,7 +487,6 @@ const styles = StyleSheet.create({
   quantityText: {
     fontSize: 14,
     fontWeight: 'bold',
-    color: '#5D4037',
   },
   subtotalContainer: {
     flexDirection: 'row',
@@ -506,17 +495,14 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     marginTop: 4,
     borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
   },
   subtotalLabel: {
     fontSize: 14,
-    color: '#5D4037',
     fontWeight: '600',
   },
   subtotalValue: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#4E342E',
   },
   subtotalValues: {
     flexDirection: 'row',
@@ -524,7 +510,6 @@ const styles = StyleSheet.create({
   },
   originalSubtotal: {
     fontSize: 13,
-    color: '#999',
     textDecorationLine: 'line-through',
     marginRight: 5,
   },
