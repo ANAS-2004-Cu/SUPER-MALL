@@ -4,17 +4,17 @@ import { Stack } from 'expo-router';
 import { collection, deleteDoc, doc, getDocs, updateDoc } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    FlatList,
-    Image,
-    RefreshControl,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  FlatList,
+  Image,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
-import MiniAlert from '../../components/MiniAlert';
+import MiniAlert from '../../components/Component/MiniAlert';
 import { auth, db } from '../../Firebase/Firebase';
 import DeleteModal from '../../Modal/DeleteModal';
 

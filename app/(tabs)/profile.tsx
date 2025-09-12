@@ -1,8 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { AppState, Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import MiniAlert from "../../components/MiniAlert";
+import { AppState, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import MiniAlert from "../../components/Component/MiniAlert";
+import { signOut } from "../../Firebase/Firebase";
 import { darkTheme, lightTheme } from "../../Theme/Tabs/ProfileTheme";
 
 const Profile = () => {
@@ -65,8 +66,31 @@ const Profile = () => {
     action();
   };
 
+  const handleSignOut = async () => {
+    try {
+      const result = await signOut();
+      if (result.success) {
+        // Clear user data from AsyncStorage
+        await AsyncStorage.removeItem("UserObject");
+        setUserData(null);
+        setIsLoggedIn(false);
+        showAlert("Successfully signed out", 'success');
+        // Optionally redirect to login or home
+        router.push("../Authentication/Login");
+      } else {
+        showAlert(result.error || "Failed to sign out", 'error');
+      }
+    } catch (error) {
+      showAlert("An error occurred while signing out", 'error');
+    }
+  };
+
   return (
-    <View style={[styles.container, theme.container]}>
+    <ScrollView 
+      style={[styles.container, theme.container]}
+      contentContainerStyle={styles.contentContainer}
+      showsVerticalScrollIndicator={false}
+    >
       {alertMsg && (
         <MiniAlert
           message={alertMsg}
@@ -159,16 +183,28 @@ const Profile = () => {
         <Text style={[styles.textb, theme.name]}>Settings</Text>
         <View style={[styles.arrow, theme.arrow]}></View>
       </TouchableOpacity>
-    </View>
+
+      {isLoggedIn && (
+        <TouchableOpacity
+          style={[styles.signoutButton, theme.signoutButton]}
+          onPress={handleSignOut}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.signoutText, theme.signoutText]}>Sign Out</Text>
+        </TouchableOpacity>
+      )}
+    </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    alignItems: "center",
-    paddingTop: 80,
   },
+  contentContainer: {
+    alignItems: "center",
+    paddingTop: 80
+    },
   profiletabs: {
     width: "90%",
     height: 53,
@@ -235,6 +271,20 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3,
     borderBottomWidth: 3,
     transform: [{ rotate: "-45deg" }],
+  },
+  signoutButton: {
+    width: "90%",
+    height: 50,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 20,
+    marginBottom: 30,
+    borderWidth: 1,
+  },
+  signoutText: {
+    fontSize: 16,
+    fontWeight: "bold",
   },
 });
 

@@ -21,7 +21,7 @@ import Icon_1 from 'react-native-vector-icons/MaterialIcons';
 const { width } = Dimensions.get("window");
 const cardWidth = width / 2 - 30;
 import { collection, onSnapshot, setDoc, doc, getDoc, updateDoc, increment } from "firebase/firestore";
-import MiniAlert from "../components/MiniAlert";
+import MiniAlert from "../components/Component/MiniAlert";
 
 const SearchFilterScreen = () => {
   const [searchText, setSearchText] = useState("");

@@ -94,13 +94,14 @@ const Orders = () => {
           id: order.id || `order_${index}`,
           createdAt: order.createdAt || 'Unknown date',
           OrderedProducts: orderedProducts.map((product: any, productIndex: number) => ({
-            id: product.id || `product_${index}_${productIndex}`,
+            id: product.productId || `product_${index}_${productIndex}`,
             name: product.name,
             price: product.price,
             image: product.image,
             description: product.description,
             quantity: product.quantity || 1,
-            discount: product.discount || 0
+            discount: product.discount || 0,
+            category: product.category || 'Uncategorized'
           })),
           orderTotal
         };
@@ -140,8 +141,6 @@ const Orders = () => {
     const discountedPrice = hasDiscount
       ? item.price! - (item.price! * item.discount! / 100)
       : item.price;
-
-    const subtotal = (item.price || 0) * (item.quantity || 1);
     const discountedSubtotal = calculateProductTotal(item);
 
     return (
@@ -169,7 +168,7 @@ const Orders = () => {
             <Text style={[styles.productName, { color: theme.textPrimary }]} numberOfLines={1}>
               {item.name || 'Unnamed Product'}
             </Text>
-            <Text style={[styles.productDescription, { color: theme.textSecondary }]} numberOfLines={1}>
+            <Text style={[styles.productDescription, { color: theme.textSecondary }]} numberOfLines={2}>
               {item.description || 'No description available'}
             </Text>
 

@@ -8,7 +8,7 @@ import Review from './Review'
 import { getAuth } from 'firebase/auth';
 import { useRouter } from 'expo-router';
 import ModernAlert from '../components/ModernAlert';
-import MiniAlert from '../components/MiniAlert';
+import MiniAlert from '../components/Component/MiniAlert';
 
 
 

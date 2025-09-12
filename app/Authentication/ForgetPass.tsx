@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Dimensions, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import MiniAlert from '../../components/MiniAlert';
+import MiniAlert from '../../components/Component/MiniAlert';
 import { resetPassword } from '../../Firebase/Firebase';
 import { darkTheme, lightTheme } from '../../Theme/Auth/ForgetPassTheme';
 

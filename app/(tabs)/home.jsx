@@ -1,17 +1,17 @@
+import { MaterialIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { arrayRemove, arrayUnion, collection, doc, getDoc, getDocs, increment, limit, onSnapshot, orderBy, query, setDoc, updateDoc } from "firebase/firestore";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Dimensions, FlatList, Image, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import Icon from "react-native-vector-icons/Feather";
-import React, { useState, useEffect, useMemo, useCallback } from "react";
-import { View, Text, Image, StyleSheet, FlatList, Dimensions, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from "react-native";
-import { Stack, useRouter, useLocalSearchParams } from "expo-router";
+import { auth, db } from '../../Firebase/Firebase';
+
+
+
+import MiniAlert from '../../components/Component/MiniAlert';
 const { width } = Dimensions.get("window");
 const cardWidth = width / 2 - 24;
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { db } from '../../Firebase/Firebase';
-import { collection, onSnapshot, arrayUnion, arrayRemove, query, orderBy, limit } from "firebase/firestore";
-import { MaterialIcons } from '@expo/vector-icons';
-import { auth } from "../../Firebase/Firebase";
-import { doc, getDoc, setDoc, updateDoc, increment, getDocs } from 'firebase/firestore';
-
-import MiniAlert from '../../components/MiniAlert';
 
 const HomePage = () => {
   const { categories } = useLocalSearchParams();

@@ -5,10 +5,10 @@ import { Stack, router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { auth, getDocument, updateDocument } from '../../Firebase/Firebase';
-import { darkTheme, lightTheme } from '../../Theme/ProfileTabs/AddressTheme';
 import AddressModal from '../../Modal/AddressModal';
 import DeleteModal from '../../Modal/DeleteModal';
-import MiniAlert from '../../components/MiniAlert';
+import { darkTheme, lightTheme } from '../../Theme/ProfileTabs/AddressTheme';
+import MiniAlert from '../../components/Component/MiniAlert';
 
 interface Address {
   id: string;

@@ -6,7 +6,7 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { db } from "../Firebase/Firebase.jsx";
 // import LottieView from 'lottie-react-native';
-import MiniAlert from '../components/MiniAlert';
+import MiniAlert from '../components/Component/MiniAlert';
 const CartScreen = () => {
   const router = useRouter();
   const [cart, setCart] = useState([]);
@@ -161,13 +161,6 @@ const CartScreen = () => {
         justifyContent: 'center',
         flex: 1,
       }}>
-        {/* <LottieView
-          source={require('../components/Animation.json')}
-          autoPlay
-          loop={false}
-          onAnimationFinish={() => setIsCheckoutComplete(false)}
-          style={{ width: 200, height: 200 }}
-        /> */}
         <Text style={{ fontSize: 20, marginTop: 20 }}>Checkout Successful!</Text>
 
       </View>

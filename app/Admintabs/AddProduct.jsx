@@ -5,7 +5,7 @@ import { Picker } from '@react-native-picker/picker';
 import { collection, addDoc } from 'firebase/firestore';
 import { db, auth } from '../../Firebase/Firebase';
 import { FontAwesome } from '@expo/vector-icons';
-import MiniAlert from '../../components/MiniAlert';
+import MiniAlert from '../../components/Component/MiniAlert';
 
 
 const AddProduct = () => {

@@ -1,22 +1,22 @@
-import {
-    View,
-    Text,
-    TextInput,
-    StyleSheet,
-    Image,
-    TouchableOpacity,
-    Modal,
-    ActivityIndicator,
-    ScrollView,
-} from 'react-native';
-import React, { useState } from 'react';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons, MaterialIcons, FontAwesome } from '@expo/vector-icons';
+import { FontAwesome, Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
 import * as ImagePicker from 'expo-image-picker';
+import { LinearGradient } from 'expo-linear-gradient';
 import { doc, updateDoc } from 'firebase/firestore';
+import React, { useState } from 'react';
+import {
+  ActivityIndicator,
+  Image,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { db } from '../Firebase/Firebase';
-import MiniAlert from './MiniAlert';
+import MiniAlert from './Component/MiniAlert';
 
 interface EditingProduct {
     id: string;

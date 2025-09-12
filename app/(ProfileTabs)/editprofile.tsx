@@ -7,7 +7,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Dimensions, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { auth, createQuery, getCollection, getUserData, updateDocument } from '../../Firebase/Firebase';
 import { darkTheme, lightTheme } from '../../Theme/ProfileTabs/EditProfileTheme';
-import MiniAlert from '../../components/MiniAlert';
+import MiniAlert from '../../components/Component/MiniAlert';
 
 const { width } = Dimensions.get('window');
 

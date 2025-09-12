@@ -12,7 +12,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import MiniAlert from '../../components/MiniAlert';
+import MiniAlert from '../../components/Component/MiniAlert';
 import { auth, getDocument, updateDocument } from '../../Firebase/Firebase';
 import DeleteModal from '../../Modal/DeleteModal';
 import { darkTheme, lightTheme } from '../../Theme/ProfileTabs/WishlistTheme';

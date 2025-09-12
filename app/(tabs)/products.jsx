@@ -1,134 +1,198 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from "react";
-import { Dimensions, FlatList, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { AppState, Dimensions, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Icon from "react-native-vector-icons/Feather";
+import MiniAlert from '../../components/Component/MiniAlert';
+import ProductCard from '../../components/Component/ProductCard';
 import {
-  createDocumentWithId,
   getCollection,
-  getDocument,
-  onAuthStateChange,
-  updateDocument
+  onAuthStateChange
 } from '../../Firebase/Firebase';
-import MiniAlert from '../../components/MiniAlert';
+import FilterModal from '../../Modal/FilterModal';
+import { darkTheme, lightTheme } from '../../Theme/Tabs/ProductsTheme';
 
 const { width } = Dimensions.get('window');
-const cardWidth = (width / 2) - 24;
 
 const ProductList = () => {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [products, setProducts] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
-  const [alertMsg, setAlertMsg] = useState(null);
-  const [alertType, setAlertType] = useState('success');
-  const [load, setLoad] = useState(false);
+  const [alert, setAlert] = useState({ message: null, type: 'success' });
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [sortBy, setSortBy] = useState('name');
+  const [categories, setCategories] = useState(['All']);
+  const [isFilterModalVisible, setIsFilterModalVisible] = useState(false);
+  const [priceRange, setPriceRange] = useState([0, 10000]);
+  const [maxPrice, setMaxPrice] = useState(10000);
+  const [theme, setTheme] = useState(lightTheme);
+  const [isFilterModalDarkMode, setIsFilterModalDarkMode] = useState(false);
+  const [appState, setAppState] = useState(AppState.currentState);
 
-  const applyDiscount = (price, discountPercentage) => {
-    return Math.floor(price - (price * discountPercentage) / 100);
-  };
+  const applyDiscount = (price, discount = 0) => Math.floor(price - (price * discount) / 100);
 
   const showAlert = (message, type = 'success') => {
-    setLoad(true);
-    setAlertMsg(message);
-    setAlertType(type);
-    setTimeout(() => {
-      setAlertMsg(null);
-      setLoad(false);
-    }, 3000);
+    setAlert({ message, type });
+    setTimeout(() => setAlert({ message: null, type }), 3000);
   };
 
-  const filteredProducts = products.filter((item) =>
-    item.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // وظيفة للتحقق من الثيم وتحديثه
+  const checkTheme = async () => {
+    try {
+      const themeMode = await AsyncStorage.getItem("ThemeMode");
+      if (themeMode === "2") {
+        setTheme(darkTheme);
+        setIsFilterModalDarkMode(true);
+      } else {
+        setTheme(lightTheme);
+        setIsFilterModalDarkMode(false);
+      }
+    } catch (error) {
+      console.error("Failed to load theme:", error);
+    }
+  };
 
+  // الاستماع لتغييرات حالة التطبيق
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChange((user) => {
-      setCurrentUser(user);
+    const subscription = AppState.addEventListener("change", nextAppState => {
+      if (appState.match(/inactive|background/) && nextAppState === "active") {
+        // عند عودة التطبيق للنشاط، تحقق من الثيم
+        checkTheme();
+      }
+      setAppState(nextAppState);
     });
 
-    const fetchProducts = async () => {
-      const result = await getCollection("products");
-      if (result.success) {
-        setProducts(result.data);
+    return () => {
+      if (subscription && subscription.remove) {
+        subscription.remove();
       }
     };
+  }, [appState]);
 
-    fetchProducts();
-    return () => unsubscribeAuth();
+  // تحميل البيانات وضبط فحص الثيم الدوري
+  useEffect(() => {
+    // التحقق من الثيم عند بدء التشغيل
+    checkTheme();
+    
+    // ضبط فحص دوري للثيم كل ثانية
+    const themeCheckInterval = setInterval(checkTheme, 1000);
+    
+    const unsubscribeAuth = onAuthStateChange(setCurrentUser);
+
+    getCollection("products").then(result => {
+      if (result.success) {
+        setProducts(result.data);
+        const uniqueCategories = ['All', ...new Set(result.data.map(product => product.category).filter(Boolean))];
+        setCategories(uniqueCategories);
+
+        if (result.data.length > 0) {
+          const highestPrice = Math.max(...result.data.map(product => product.price));
+          setMaxPrice(Math.ceil(highestPrice / 100) * 100);
+          setPriceRange([0, Math.ceil(highestPrice / 100) * 100]);
+        }
+      }
+    });
+
+    // تنظيف عند إزالة المكون
+    return () => {
+      unsubscribeAuth();
+      clearInterval(themeCheckInterval);
+    };
   }, []);
 
-  const handleAddToCart = async (item) => {
-    if (!currentUser) {
-      showAlert('Please sign in to add products to your shopping cart', 'error');
-      return;
-    }
+  const getFilteredAndSortedProducts = () => {
+    let filtered = products.filter(item => {
+      const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesCategory = selectedCategory === 'All' || item.category === selectedCategory;
+      const price = applyDiscount(item.price, item.discount);
+      const matchesPrice = price >= priceRange[0] && price <= priceRange[1];
+      return matchesSearch && matchesCategory && matchesPrice;
+    });
 
-    try {
-      const cartResult = await getDocument('Users', `${currentUser.uid}/cart/${item.id}`);
-      
-      if (cartResult.success) {
-        await updateDocument('Users', `${currentUser.uid}/cart/${item.id}`, {
-          quantity: cartResult.data.quantity + 1,
-          updatedAt: new Date(),
-        });
-      } else {
-        await createDocumentWithId('Users', `${currentUser.uid}/cart/${item.id}`, {
-          productId: item.id,
-          name: item.name,
-          price: item.price,
-          image: item.image,
-          discount: item.discount || 0,
-          quantity: 1,
-          createdAt: new Date(),
-        });
+    return filtered.sort((a, b) => {
+      switch (sortBy) {
+        case 'priceLow':
+          return applyDiscount(a.price, a.discount) - applyDiscount(b.price, b.discount);
+        case 'priceHigh':
+          return applyDiscount(b.price, b.discount) - applyDiscount(a.price, a.discount);
+        case 'name':
+        default:
+          return a.name.localeCompare(b.name);
       }
-      
-      showAlert(`${String(item.name).split(' ').slice(0, 2).join(' ')} Added to your shopping cart`, 'success');
-
-    } catch (error) {
-      showAlert('Failed to add product to cart. Please try again.', 'error');
-    }
+    });
   };
 
+  const applyFilters = (filters) => {
+    setSelectedCategory(filters.category);
+    setSortBy(filters.sortBy);
+    setPriceRange(filters.priceRange);
+  };
+
+  const filteredProducts = getFilteredAndSortedProducts();
+
   return (
-    <View style={styles.container}>
-      {alertMsg && (
+    <View style={styles(theme).container}>
+      {alert.message && (
         <MiniAlert
-          message={alertMsg}
-          type={alertType}
-          onHide={() => setAlertMsg(null)}
+          message={alert.message}
+          type={alert.type}
+          onHide={() => setAlert({ message: null, type: alert.type })}
         />
       )}
-      <Text style={styles.heading}>All Products</Text>
-      <TextInput
-        placeholder="Search products..."
-        value={searchQuery}
-        onChangeText={setSearchQuery}
-        style={styles.searchInput}
-      />
-      <FlatList
-        data={filteredProducts}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <TouchableOpacity onPress={() => router.push({ pathname: "/singlepage", params: { id: item.id } })} disabled={load}>
-            <View style={styles.card}>
-              <Image source={{ uri: item.image }} style={styles.image} />
-              <View style={styles.textContainer}>
-                <Text style={styles.title} numberOfLines={3}>{item.name}</Text>
-                <Text style={styles.price}>EGP {applyDiscount(item.price, item.discount)}</Text>
-                <TouchableOpacity
-                  style={styles.addToCartButton}
-                  onPress={() => handleAddToCart(item)}
-                  disabled={load}
-                >
-                  <Icon name="shopping-cart" size={20} color="#fff" />
-                  <Text style={{ color: '#fff', marginLeft: 5 }}>Add to Cart</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+
+      <View style={styles(theme).header}>
+        <Text style={styles(theme).heading}>All Products ({filteredProducts.length})</Text>
+        <TouchableOpacity
+          style={styles(theme).filterButton}
+          onPress={() => setIsFilterModalVisible(true)}
+        >
+          <Icon name="sliders" size={20} color={theme.filterIconColor} />
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles(theme).searchContainer}>
+        <Icon name="search" size={18} color={theme.searchIconColor} style={styles(theme).searchIcon} />
+        <TextInput
+          placeholder="Search products..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          style={styles(theme).searchInput}
+          placeholderTextColor={theme.searchInputPlaceholderColor}
+          selectionColor={theme.priceColor}
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity onPress={() => setSearchQuery('')} style={styles(theme).clearButton}>
+            <Icon name="x" size={16} color={theme.searchIconColor} />
           </TouchableOpacity>
         )}
-        contentContainerStyle={styles.listContainer}
+      </View>
+
+      <FilterModal
+        visible={isFilterModalVisible}
+        onClose={() => setIsFilterModalVisible(false)}
+        categories={categories}
+        selectedCategory={selectedCategory}
+        setSelectedCategory={setSelectedCategory}
+        sortBy={sortBy}
+        setSortBy={setSortBy}
+        onApply={applyFilters}
+        maxPrice={maxPrice}
+        darkMode={isFilterModalDarkMode}
+      />
+
+      <FlatList
+        data={filteredProducts}
+        keyExtractor={item => item.id}
+        renderItem={({ item }) => (
+          <ProductCard
+            item={item}
+            customTheme={theme}
+            currentUser={currentUser}
+            onShowAlert={showAlert}
+          />
+        )}
+        contentContainerStyle={styles(theme).listContainer}
         numColumns={2}
         showsVerticalScrollIndicator={false}
       />
@@ -136,81 +200,64 @@ const ProductList = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const styles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
     paddingTop: 20,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: theme.backgroundColor,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    marginBottom: 15,
   },
   heading: {
     fontSize: 24,
     fontWeight: 'bold',
-    marginBottom: 15,
-    textAlign: 'center',
-    color: '#333',
+    color: theme.headingColor,
+  },
+  filterButton: {
+    padding: 10,
+    backgroundColor: theme.filterButtonBackground,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: theme.filterButtonBorderColor,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.searchInputBackground,
+    borderRadius: 12,
+    marginHorizontal: 12,
+    marginBottom: 16,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: theme.searchInputBorderColor,
+    height: 48,
+    shadowColor: theme.searchInputShadowColor,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    height: '100%',
+    color: theme.searchInputTextColor,
+    fontSize: 16,
+    padding: 0,
+  },
+  clearButton: {
+    padding: 6,
   },
   listContainer: {
     paddingHorizontal: 12,
     paddingBottom: 20,
-  },
-  card: {
-    width: cardWidth,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 14,
-    margin: 8,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    alignItems: 'center',
-    height: 280,
-  },
-  image: {
-    width: '100%',
-    height: 120,
-    resizeMode: 'contain',
-    borderRadius: 10,
-  },
-
-  textContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: '100%',
-    paddingTop: 8,
-  },
-  title: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    color: '#222',
-  },
-  price: {
-    fontSize: 14,
-    color: 'red',
-    fontWeight: '600',
-    marginTop: 5,
-  },
-  searchInput: {
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    padding: 10,
-    marginHorizontal: 12,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: '#ddd',
-  },
-  addToCartButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginTop: 10,
-    width: "100%",
   },
 });
 

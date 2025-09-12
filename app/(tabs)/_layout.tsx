@@ -1,33 +1,64 @@
-import React from 'react';
-import { Tabs } from "expo-router";
 import { Ionicons } from '@expo/vector-icons';
-import { Platform } from 'react-native';
 import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
+import { Tabs } from "expo-router";
+import React, { useCallback, useState } from 'react';
+import { Platform } from 'react-native';
 
 export default function TabLayout() {
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+
+  const loadTheme = async () => {
+    try {
+      const value = await AsyncStorage.getItem('ThemeMode');
+      if (value === '2') {
+        setTheme('dark');
+      } else {
+        setTheme('light');
+      }
+    } catch (e) {
+      console.log("Error loading theme", e);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      loadTheme();
+    }, [])
+  );
+
+  const isLight = theme === 'light';
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#007AFF',
-        tabBarInactiveTintColor: '#8e8e93',
+        tabBarActiveTintColor: isLight ? '#007AFF' : '#4da6ff',
+        tabBarInactiveTintColor: isLight ? '#8e8e93' : '#9e9e9e',
         tabBarStyle: {
-          backgroundColor: '#ffffff',
-          borderTopLeftRadius: 20,
-          borderTopRightRadius: 20,
+          backgroundColor: isLight ? '#ffffff' : '#1e1e1e',
+          borderTopLeftRadius: isLight ? 0 : 0,
+          borderTopRightRadius: isLight ? 0 : 0,
           shadowColor: '#000',
-          shadowOffset: { width: 0, height: -3 },
-          shadowOpacity: 0.05,
-          shadowRadius: 8,
-          elevation: 15,
-          height: Platform.OS === 'ios' ? 65 : 60,
+          shadowOffset: { width: 0, height: -4 },
+          shadowOpacity: isLight ? 0.08 : 0.4,
+          shadowRadius: 10,
+          elevation: 20,
+          height: Platform.OS === 'ios' ? 75 : 75,
           paddingBottom: Platform.OS === 'ios' ? 15 : 10,
           borderTopWidth: 0,
+          paddingTop: 2,
+          position: 'relative',
+          left: 0,
+          right: 0,
+          bottom: 0,
         },
         tabBarLabelStyle: {
           fontSize: 12,
           fontWeight: '600',
-          marginBottom: 4,
+          marginTop: 4,
+          color: isLight ? '#333' : '#f2f2f2',
         },
       }}
     >
@@ -35,8 +66,8 @@ export default function TabLayout() {
         name='home'
         options={{
           title: 'Home',
-          tabBarIcon: ({ color }) => (
-            <Ionicons name='home-outline' size={24} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'home' : 'home-outline'} size={26} color={color} />
           )
         }}
       />
@@ -44,8 +75,8 @@ export default function TabLayout() {
         name='products'
         options={{
           title: 'Products',
-          tabBarIcon: ({ color }) => (
-            <Ionicons name='pricetags-outline' size={24} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'pricetags' : 'pricetags-outline'} size={24} color={color} />
           )
         }}
       />
@@ -53,17 +84,17 @@ export default function TabLayout() {
         name='ChatBot'
         options={{
           title: 'Chat',
-          tabBarIcon: ({ color }) => (
-            <FontAwesome5 name="robot" size={24} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <FontAwesome5 name="robot" size={24} color={color} solid={focused} />
           )
         }}
       />
       <Tabs.Screen
         name='profile'
         options={{
-          title: 'profile',
-          tabBarIcon: ({ color }) => (
-            <Ionicons name='person-outline' size={24} color={color} />
+          title: 'Profile',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'person' : 'person-outline'} size={25} color={color} />
           )
         }}
       />

@@ -22,6 +22,13 @@ export const lightTheme = {
   arrow: {
     borderColor: "#111",
   },
+  signoutButton: {
+    backgroundColor: "#ff4444",
+    borderColor: "#ff4444",
+  },
+  signoutText: {
+    color: "white",
+  },
 };
 
 export const darkTheme = {
@@ -47,5 +54,12 @@ export const darkTheme = {
   },
   arrow: {
     borderColor: "#e0e0e0",
+  },
+  signoutButton: {
+    backgroundColor: "#ff6b6b",
+    borderColor: "#ff6b6b",
+  },
+  signoutText: {
+    color: "white",
   },
 };

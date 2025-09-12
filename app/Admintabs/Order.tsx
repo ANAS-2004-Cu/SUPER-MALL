@@ -1,24 +1,24 @@
+import { AntDesign, Entypo, Feather, FontAwesome, Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Stack } from 'expo-router';
+import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import {
-    View,
-    Text,
-    FlatList,
-    StyleSheet,
-    TouchableOpacity,
-    ActivityIndicator,
-    Image,
-    RefreshControl,
-    TextInput,
-    LayoutAnimation,
-    Platform,
-    Keyboard,
+  ActivityIndicator,
+  FlatList,
+  Image,
+  Keyboard,
+  LayoutAnimation,
+  Platform,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { collection, getDocs, getDoc, doc } from 'firebase/firestore';
+import MiniAlert from '../../components/Component/MiniAlert';
 import { db } from '../../Firebase/Firebase';
-import { Stack } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
-import { MaterialIcons, FontAwesome, Ionicons, Feather, AntDesign, Entypo } from '@expo/vector-icons';
-import MiniAlert from '../../components/MiniAlert';
 
 interface OrderItem {
     id: string;

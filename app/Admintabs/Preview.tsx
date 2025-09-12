@@ -6,24 +6,24 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { collection, deleteDoc, doc, getDocs } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    FlatList,
-    Image,
-    Keyboard,
-    LayoutAnimation,
-    ListRenderItemInfo,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  FlatList,
+  Image,
+  Keyboard,
+  LayoutAnimation,
+  ListRenderItemInfo,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { db } from '../../Firebase/Firebase';
 import DeleteModal from '../../Modal/DeleteModal';
+import MiniAlert from '../../components/Component/MiniAlert';
 import EditProductModal from '../../components/EditProductModal';
-import MiniAlert from '../../components/MiniAlert';
   
   interface Product {
     id: string;
