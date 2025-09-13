@@ -10,6 +10,7 @@ import { darkTheme, lightTheme } from '../../Theme/ProfileTabs/EditProfileTheme'
 import MiniAlert from '../../components/Component/MiniAlert';
 
 const { width } = Dimensions.get('window');
+const IMGBB_API_KEY = "5f368fdc294d3cd3ddc0b0e9297a10fb";
 
 const EditProfile = () => {
   const [image, setImage] = useState<string | null>(null);
@@ -19,25 +20,34 @@ const EditProfile = () => {
   const [num, setNum] = useState<string | null>(null);
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
   const [alertType, setAlertType] = useState<'success' | 'error'>('success');
-  const [load, setLoad] = useState<boolean>(false);
-  const [imageSourceModalVisible, setImageSourceModalVisible] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [imageModalVisible, setImageModalVisible] = useState<boolean>(false);
   const [errors, setErrors] = useState<{ username?: string; fullname?: string; phone?: string; }>({});
   const [theme, setTheme] = useState(lightTheme);
 
-  const IMGBB_API_KEY = "5f368fdc294d3cd3ddc0b0e9297a10fb";
+  const scaleAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    const loadTheme = async () => {
-      try {
-        const themeMode = await AsyncStorage.getItem('ThemeMode');
-        setTheme(themeMode === '2' ? darkTheme : lightTheme);
-      } catch (error) {
-        console.error('Error loading theme:', error);
-      }
-    };
-    
     loadTheme();
+    fetchUserData();
   }, []);
+
+  const loadTheme = async () => {
+    try {
+      const themeMode = await AsyncStorage.getItem('ThemeMode');
+      setTheme(themeMode === '2' ? darkTheme : lightTheme);
+    } catch (error) {
+      console.error('Error loading theme:', error);
+    }
+  };
+
+  const fetchUserData = async () => {
+    const currentUser = auth.currentUser;
+    if (currentUser) {
+      const data = await getUserData(currentUser.uid);
+      setUserData(data);
+    }
+  };
 
   const showAlert = (message: string, type: 'success' | 'error', duration = 3000) => {
     setAlertMessage(message);
@@ -45,34 +55,43 @@ const EditProfile = () => {
     setTimeout(() => setAlertMessage(null), duration);
   };
 
-  const pickImage = async (fromCamera = false) => {
-    setImageSourceModalVisible(false);
-    
-    if (fromCamera) {
-      const permission = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permission.granted) return showAlert("Camera permission required", "error");
+  const requestCameraPermission = async () => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      showAlert("Camera permission required", "error");
+      return false;
     }
+    return true;
+  };
 
-    const result = fromCamera 
-      ? await ImagePicker.launchCameraAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
-          allowsEditing: true,
-          aspect: [4, 4],
-          quality: 1,
-        })
-      : await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
-          allowsEditing: true,
-          aspect: [4, 4],
-          quality: 1,
-        });
+  const launchImagePicker = async (fromCamera: boolean) => {
+    const options = {
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 4] as [number, number],
+      quality: 1,
+    };
 
-    if (!result.canceled) setImage(result.assets[0].uri);
+    const result = fromCamera
+      ? await ImagePicker.launchCameraAsync(options)
+      : await ImagePicker.launchImageLibraryAsync(options);
+
+    if (!result.canceled) {
+      setImage(result.assets[0].uri);
+    }
+  };
+
+  const pickImage = async (fromCamera = false) => {
+    setImageModalVisible(false);
+
+    if (fromCamera && !(await requestCameraPermission())) return;
+
+    await launchImagePicker(fromCamera);
   };
 
   const validateForm = () => {
     const newErrors: any = {};
-    
+
     if (username && (username.length < 3 || username.length > 20)) {
       newErrors.username = "Username must be between 3 and 20 characters";
     }
@@ -87,130 +106,160 @@ const EditProfile = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const validateAndUpdate = async () => {
+  const checkUsernameAvailability = async (newUsername: string) => {
+    if (newUsername === userData?.username) return true;
+
+    const usernameQuery = createQuery('username', '==', newUsername);
+    const existingUsers = await getCollection('Users', [usernameQuery]);
+
+    return !(existingUsers.success && existingUsers.data && existingUsers.data.length > 0);
+  };
+
+  const uploadImage = async (imageUri: string) => {
+    const formData = new FormData();
+    formData.append("image", { uri: imageUri, type: "image/jpeg", name: "profile.jpg" } as any);
+
+    const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+      method: "POST",
+      body: formData,
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+
+    const data = await response.json();
+    return data.data.url;
+  };
+
+  const prepareUpdates = async () => {
+    const updates: any = {};
+
+    if (image) {
+      updates.image = await uploadImage(image);
+    }
+
+    if (username) updates.username = username;
+    if (num) updates.phone = num;
+    if (fullname) updates.fullname = fullname;
+
+    return updates;
+  };
+
+  const updateUserProfile = async () => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      showAlert("No user logged in", "error");
+      router.replace("../Login");
+      return;
+    }
+
+    const updates = await prepareUpdates();
+
+    if (Object.keys(updates).length > 0) {
+      const updateResult = await updateDocument("Users", currentUser.uid, updates);
+      if (!updateResult.success) throw new Error(updateResult.error);
+    }
+
+    const updatedUserData = await getUserData(currentUser.uid);
+    if (updatedUserData) {
+      await AsyncStorage.setItem('UserObject', JSON.stringify(updatedUserData));
+    }
+  };
+
+  const handleSave = async () => {
     Keyboard.dismiss();
-    if (!validateForm()) return showAlert("Please fix the errors in the form", "error");
 
-    setLoad(true);
-    
+    if (!validateForm()) {
+      showAlert("Please fix the errors in the form", "error");
+      return;
+    }
+
+    setLoading(true);
+
     try {
-      // Check username availability
-      if (username && username !== userData?.username) {
-        const usernameQuery = createQuery('username', '==', username);
-        const existingUsers = await getCollection('Users', [usernameQuery]);
-        
-        if (existingUsers.success && existingUsers.data && existingUsers.data.length > 0) {
-          setLoad(false);
-          return showAlert("Username is already taken", "error");
-        }
+      if (username && !(await checkUsernameAvailability(username))) {
+        showAlert("Username is already taken", "error");
+        return;
       }
 
-      const currentUser = auth.currentUser;
-      if (!currentUser) {
-        setLoad(false);
-        showAlert("No user logged in", "error");
-        return router.replace("../Login");
-      }
-
-      const updates: any = {};
-      
-      // Upload image if changed
-      if (image) {
-        const formData = new FormData();
-        formData.append("image", { uri: image, type: "image/jpeg", name: "profile.jpg" } as any);
-        
-        const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
-          method: "POST",
-          body: formData,
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
-        
-        const data = await response.json();
-        updates.image = data.data.url;
-      }
-
-      // Add other updates
-      if (username) updates.username = username;
-      if (num) updates.phone = num;
-      if (fullname) updates.fullname = fullname;
-
-      // Update document
-      if (Object.keys(updates).length > 0) {
-        const updateResult = await updateDocument("Users", currentUser.uid, updates);
-        if (!updateResult.success) throw new Error(updateResult.error);
-      }
-
-      // Update AsyncStorage
-      const updatedUserData = await getUserData(currentUser.uid);
-      if (updatedUserData) {
-        await AsyncStorage.setItem('UserObject', JSON.stringify(updatedUserData));
-      }
+      await updateUserProfile();
 
       showAlert("Profile updated successfully!", "success", 2000);
       setTimeout(() => {
-        setLoad(false);
         router.replace("../../(tabs)/profile");
       }, 2000);
 
     } catch (error) {
       console.error("Update error:", error);
       showAlert("Failed to update profile. Please try again.", "error");
-      setLoad(false);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const SaveButton = () => {
-    const scaleAnim = useRef(new Animated.Value(1)).current;
-
-    const animateButton = (toValue: number) => {
-      Animated.spring(scaleAnim, {
-        toValue,
-        friction: 4,
-        useNativeDriver: true,
-      }).start();
-    };
-
-    return (
-      <TouchableWithoutFeedback
-        onPressIn={() => animateButton(0.95)}
-        onPressOut={() => animateButton(1)}
-        onPress={validateAndUpdate}
-        disabled={load}
-      >
-        <Animated.View style={[styles.button, { 
-          backgroundColor: theme.buttonColor,
-          transform: [{ scale: scaleAnim }] 
-        }]}>
-          {load ? (
-            <ActivityIndicator color="#fff" size="small" style={{ marginRight: 10 }} />
-          ) : (
-            <View style={styles.iconContainer}>
-              <MaterialIcons name="save" size={24} color={theme.buttonTextColor} />
-            </View>
-          )}
-          <Text style={[styles.buttonText, { color: theme.buttonTextColor }]}>
-            {load ? "Saving..." : "Save Changes"}
-          </Text>
-        </Animated.View>
-      </TouchableWithoutFeedback>
-    );
+  const animateButton = (toValue: number) => {
+    Animated.spring(scaleAnim, {
+      toValue,
+      friction: 4,
+      useNativeDriver: true,
+    }).start();
   };
 
-  useEffect(() => {
-    const fetchUserData = async () => {
-      const currentUser = auth.currentUser;
-      if (currentUser) {
-        const data = await getUserData(currentUser.uid);
-        setUserData(data);
-      }
-    };
-    fetchUserData();
-  }, []);
+  const renderInputField = (label: string, value: string | null, setter: (value: string) => void, placeholder: string, icon: string, error?: string, keyboardType?: string) => (
+    <View style={styles.inputGroup}>
+      <Text style={[styles.inputLabel, { color: theme.inputLabelColor }]}>
+        {label}
+      </Text>
+      <View style={[styles.inputWrapper, {
+        borderColor: theme.inputBorderColor,
+        backgroundColor: theme.inputBackgroundColor
+      }]}>
+        {icon === "account" ? (
+          <MaterialCommunityIcons
+            name="account"
+            size={24}
+            color={theme.inputIconColor}
+            style={styles.inputIcon}
+          />
+        ) : (
+          <MaterialIcons
+            name={icon as any}
+            size={24}
+            color={theme.inputIconColor}
+            style={styles.inputIcon}
+          />
+        )}
+        <TextInput
+          style={[styles.inputbox, { color: theme.inputTextColor }]}
+          placeholder={placeholder}
+          onChangeText={setter}
+          placeholderTextColor={theme.placeholderColor}
+          autoCapitalize={label === "Username" ? "none" : "words"}
+          keyboardType={keyboardType as any}
+        />
+      </View>
+      {error && (
+        <Text style={[styles.errorText, { color: theme.errorTextColor }]}>
+          {error}
+        </Text>
+      )}
+    </View>
+  );
+
+  const renderImageOption = (title: string, icon: string, onPress: () => void, colors: string[]) => (
+    <TouchableOpacity style={styles.imageSourceOption} onPress={onPress}>
+      <LinearGradient colors={colors as [string, string, ...string[]]} style={styles.optionIconContainer}>
+        <FontAwesome name={icon as any} size={28} color="white" />
+      </LinearGradient>
+      <Text style={[styles.imageSourceOptionText, { color: theme.optionTextColor }]}>
+        {title}
+      </Text>
+    </TouchableOpacity>
+  );
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
       <View style={{ flex: 1 }}>
         <Stack.Screen name="address" options={{ headerShown: false }} />
+
         {alertMessage && (
           <MiniAlert
             message={alertMessage}
@@ -218,7 +267,8 @@ const EditProfile = () => {
             onHide={() => setAlertMessage(null)}
           />
         )}
-        <LinearGradient colors={theme.gradientColors  as [string, string, ...string[]]} style={styles.gradientContainer}>
+
+        <LinearGradient colors={theme.gradientColors as [string, string, ...string[]]} style={styles.gradientContainer}>
           <KeyboardAvoidingView
             behavior={Platform.OS === "ios" ? "padding" : "height"}
             style={{ flex: 1 }}
@@ -242,7 +292,7 @@ const EditProfile = () => {
                 <View style={[styles.underline, { backgroundColor: theme.underlineColor }]} />
 
                 <View style={styles.profileImageContainer}>
-                  <TouchableOpacity onPress={() => setImageSourceModalVisible(true)} style={styles.imageWrapper}>
+                  <TouchableOpacity onPress={() => setImageModalVisible(true)} style={styles.imageWrapper}>
                     <Image source={{ uri: image || userData?.image }} style={styles.logo} />
                     <View style={[styles.editBadge, { backgroundColor: theme.editBadgeColor }]}>
                       <Ionicons name="camera" size={20} color="white" />
@@ -254,88 +304,57 @@ const EditProfile = () => {
                 </View>
 
                 <View style={styles.formContainer}>
-                  {[
-                    { label: "Username", value: username, setter: setUsername, placeholder: userData?.username, icon: "account", error: errors.username },
-                    { label: "Full Name", value: fullname, setter: setFullname, placeholder: userData?.fullname, icon: "person", error: errors.fullname },
-                    { label: "Phone Number", value: num, setter: setNum, placeholder: userData?.phone, icon: "phone", error: errors.phone, keyboardType: "phone-pad" }
-                  ].map((field, index) => (
-                    <View key={index} style={styles.inputGroup}>
-                      <Text style={[styles.inputLabel, { color: theme.inputLabelColor }]}>
-                        {field.label}
-                      </Text>
-                      <View style={[styles.inputWrapper, { 
-                        borderColor: theme.inputBorderColor,
-                        backgroundColor: theme.inputBackgroundColor
-                      }]}>
-                        {field.icon === "account" ? (
-                          <MaterialCommunityIcons 
-                            name="account" 
-                            size={24} 
-                            color={theme.inputIconColor} 
-                            style={styles.inputIcon} 
-                          />
-                        ) : (
-                          <MaterialIcons 
-                            name={field.icon as any} 
-                            size={24} 
-                            color={theme.inputIconColor} 
-                            style={styles.inputIcon} 
-                          />
-                        )}
-                        <TextInput
-                          style={[styles.inputbox, { color: theme.inputTextColor }]}
-                          placeholder={field.placeholder || `Enter ${field.label.toLowerCase()}`}
-                          onChangeText={field.setter}
-                          placeholderTextColor={theme.placeholderColor}
-                          autoCapitalize={field.label === "Username" ? "none" : "words"}
-                          keyboardType={field.keyboardType as any}
-                        />
-                      </View>
-                      {field.error && (
-                        <Text style={[styles.errorText, { color: theme.errorTextColor }]}>
-                          {field.error}
-                        </Text>
-                      )}
-                    </View>
-                  ))}
+                  {renderInputField("Username", username, setUsername, userData?.username, "account", errors.username)}
+                  {renderInputField("Full Name", fullname, setFullname, userData?.fullname, "person", errors.fullname)}
+                  {renderInputField("Phone Number", num, setNum, userData?.phone, "phone", errors.phone, "phone-pad")}
                 </View>
               </View>
 
-              <SaveButton />
+              <TouchableWithoutFeedback
+                onPressIn={() => animateButton(0.95)}
+                onPressOut={() => animateButton(1)}
+                onPress={handleSave}
+                disabled={loading}
+              >
+                <Animated.View style={[styles.button, {
+                  backgroundColor: theme.buttonColor,
+                  transform: [{ scale: scaleAnim }]
+                }]}>
+                  {loading ? (
+                    <ActivityIndicator color="#fff" size="small" style={{ marginRight: 10 }} />
+                  ) : (
+                    <View style={styles.iconContainer}>
+                      <MaterialIcons name="save" size={24} color={theme.buttonTextColor} />
+                    </View>
+                  )}
+                  <Text style={[styles.buttonText, { color: theme.buttonTextColor }]}>
+                    {loading ? "Saving..." : "Save Changes"}
+                  </Text>
+                </Animated.View>
+              </TouchableWithoutFeedback>
             </ScrollView>
 
             <Modal
               animationType="fade"
               transparent={true}
-              visible={imageSourceModalVisible}
-              onRequestClose={() => setImageSourceModalVisible(false)}
+              visible={imageModalVisible}
+              onRequestClose={() => setImageModalVisible(false)}
             >
-              <TouchableWithoutFeedback onPress={() => setImageSourceModalVisible(false)}>
-                <View style={[styles.imageSourceModalOverlay, { 
-                  backgroundColor: theme.modalOverlayColor 
+              <TouchableWithoutFeedback onPress={() => setImageModalVisible(false)}>
+                <View style={[styles.imageSourceModalOverlay, {
+                  backgroundColor: theme.modalOverlayColor
                 }]}>
                   <TouchableWithoutFeedback>
-                    <View style={[styles.imageSourceModalContent, { 
-                      backgroundColor: theme.modalBackgroundColor 
+                    <View style={[styles.imageSourceModalContent, {
+                      backgroundColor: theme.modalBackgroundColor
                     }]}>
                       <Text style={[styles.imageSourceModalTitle, { color: theme.modalTitleColor }]}>
                         Change Profile Picture
                       </Text>
 
                       <View style={styles.imageSourceOptions}>
-                        {[
-                          { title: "Gallery", icon: "photo", onPress: () => pickImage(false), colors: theme.optionGradient1 },
-                          { title: "Camera", icon: "camera", onPress: () => pickImage(true), colors: theme.optionGradient2 }
-                        ].map((option, index) => (
-                          <TouchableOpacity key={index} style={styles.imageSourceOption} onPress={option.onPress}>
-                            <LinearGradient colors={option.colors  as [string, string, ...string[]]} style={styles.optionIconContainer}>
-                              <FontAwesome name={option.icon as any} size={28} color="white" />
-                            </LinearGradient>
-                            <Text style={[styles.imageSourceOptionText, { color: theme.optionTextColor }]}>
-                              {option.title}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
+                        {renderImageOption("Gallery", "photo", () => pickImage(false), theme.optionGradient1)}
+                        {renderImageOption("Camera", "camera", () => pickImage(true), theme.optionGradient2)}
                       </View>
 
                       <TouchableOpacity
@@ -343,7 +362,7 @@ const EditProfile = () => {
                           backgroundColor: theme.cancelButtonBackgroundColor,
                           borderColor: theme.cancelButtonBorderColor
                         }]}
-                        onPress={() => setImageSourceModalVisible(false)}
+                        onPress={() => setImageModalVisible(false)}
                       >
                         <Text style={[styles.imageSourceCancelText, { color: theme.cancelTextColor }]}>
                           Cancel
@@ -358,8 +377,8 @@ const EditProfile = () => {
         </LinearGradient>
       </View>
     </TouchableWithoutFeedback>
-  )
-}
+  );
+};
 
 const styles = StyleSheet.create({
   gradientContainer: {
@@ -546,6 +565,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-})
+});
 
 export default EditProfile;

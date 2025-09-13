@@ -1,37 +1,76 @@
-import { MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { arrayRemove, arrayUnion, collection, doc, getDoc, getDocs, increment, limit, onSnapshot, orderBy, query, setDoc, updateDoc } from "firebase/firestore";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Dimensions, FlatList, Image, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, AppState, FlatList, Image, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import Icon from "react-native-vector-icons/Feather";
-import { auth, db } from '../../Firebase/Firebase';
-
-
-
 import MiniAlert from '../../components/Component/MiniAlert';
-const { width } = Dimensions.get("window");
-const cardWidth = width / 2 - 24;
+import ProductCard from '../../components/Component/ProductCard';
+import { auth, createLimit, createOrderBy, getCollection, getUserData } from '../../Firebase/Firebase';
+import { darkTheme, lightTheme } from '../../Theme/Tabs/HomeTheme';
+
+const Categories = [
+  { id: 1, name: "Mobile", image: "https://i.ibb.co/4ZhGCKn2/apple-iphone-16-pro-desert-1-3.jpg" },
+  { id: 2, name: "Computers", image: "https://i.ibb.co/xqvrtNZD/zh449-1.jpg" },
+  { id: 3, name: "TVs", image: "https://i.ibb.co/vvTrVWFD/tv556-1.jpg" },
+  { id: 4, name: "Men", image: "https://i.ibb.co/RGzqBrwk/1.jpg" },
+  { id: 5, name: "Women", image: "https://i.ibb.co/Kzr7MVxM/1.jpg" },
+  { id: 6, name: "Kids", image: "https://i.ibb.co/20TYN7Lz/1.jpg" },
+];
 
 const HomePage = () => {
   const { categories } = useLocalSearchParams();
   const selectedCategories = categories ? JSON.parse(categories) : [];
   const [storedCategories, setStoredCategories] = useState([]);
-
-  console.log(selectedCategories);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [favorites, setFavorites] = useState([]);
   const currentUser = auth.currentUser;
   const router = useRouter();
-
   const [alertMsg, setAlertMsg] = useState(null);
   const [alertType, setAlertType] = useState('success');
-
-  const [filteredItems, setFilteredItems] = useState([]);
   const [load, setLoad] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchSuggestions, setSearchSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [allProducts, setAllProducts] = useState([]);
+  const [preferredCategories, setPreferredCategories] = useState([]);
+  const [recommendedProducts, setRecommendedProducts] = useState([]);
+  // IDs arrays coming from ProductsManage document
+  const [topSellingIds, setTopSellingIds] = useState([]);
+  const [newArrivalIds, setNewArrivalIds] = useState([]);
+  const [theme, setTheme] = useState(lightTheme);
+  const [appState, setAppState] = useState(AppState.currentState);
+
+  const checkTheme = async () => {
+    try {
+      const themeMode = await AsyncStorage.getItem("ThemeMode");
+      setTheme(themeMode === "2" ? darkTheme : lightTheme);
+    } catch {}
+  };
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", nextAppState => {
+      if (appState.match(/inactive|background/) && nextAppState === "active") {
+        checkTheme();
+      }
+      setAppState(nextAppState);
+    });
+    return () => {
+      if (subscription && subscription.remove) {
+        subscription.remove();
+      }
+    };
+  }, [appState]);
+
+  useEffect(() => {
+    checkTheme();
+    const themeCheckInterval = setInterval(checkTheme, 1000);
+    return () => {
+      clearInterval(themeCheckInterval);
+    };
+  }, []);
+
   const showAlert = (message, type = 'success') => {
     setLoad(true);
     setAlertMsg(message);
@@ -45,18 +84,12 @@ const HomePage = () => {
   const storeCategories = async () => {
     try {
       if (selectedCategories.length > 0) {
-
         const existing = await AsyncStorage.getItem('categories');
         if (!existing) {
           await AsyncStorage.setItem('categories', JSON.stringify(selectedCategories));
-          console.log('Categories saved to AsyncStorage');
-        } else {
-          console.log('Categories already exist in AsyncStorage');
         }
       }
-    } catch (error) {
-      console.log('Error storing categories:', error);
-    }
+    } catch {}
   };
 
   const getStoredCategories = async () => {
@@ -65,32 +98,52 @@ const HomePage = () => {
       if (value) {
         const parsed = JSON.parse(value);
         setStoredCategories(parsed);
-        console.log('Fetched categories from AsyncStorage:', parsed);
-
-
-        fetchAndFilterProducts(parsed);
-      } else {
-        console.log('No categories found in AsyncStorage');
       }
-    } catch (error) {
-      console.log('Error fetching categories:', error);
+    } catch {}
+  };
+
+  const fetchPreferredCategories = async () => {
+    try {
+      const userObjectJson = await AsyncStorage.getItem('UserObject');
+      if (userObjectJson) {
+        const userObject = JSON.parse(userObjectJson);
+        if (userObject && userObject.preferredCategories && userObject.preferredCategories.length > 0) {
+          setPreferredCategories(userObject.preferredCategories);
+          return userObject.preferredCategories;
+        }
+      }
+      return [];
+    } catch {
+      return [];
     }
   };
-  const fetchAndFilterProducts = async (categoriesToUse) => {
-    const querySnapshot = await getDocs(collection(db, "products"));
-    const allItems = [];
-    querySnapshot.forEach((doc) => {
-      allItems.push({ docId: doc.id, ...doc.data() });
-    });
 
-    console.log("this is in Async", categoriesToUse);
-    const filtered = allItems.filter(item =>
-      categoriesToUse.includes(item.category)
-    );
+  const fetchRecommendedProducts = useCallback(async () => {
+    const categories = await fetchPreferredCategories();
+    if (categories.length === 0) return;
+    try {
+      const response = await getCollection("products");
+      if (response.success) {
+        const filtered = response.data.filter(product =>
+          categories.includes(product.category)
+        );
+        setRecommendedProducts(filtered.sort(() => Math.random() - 0.5).slice(0, 15));
+      }
+    } catch {}
+  }, []);
 
-    setFilteredItems(filtered);
-  };
-
+  const updateUserDataFromFirebase = useCallback(async () => {
+    if (!currentUser) return;
+    try {
+      const userData = await getUserData(currentUser.uid);
+      if (userData) {
+        await AsyncStorage.setItem('UserObject', JSON.stringify(userData));
+        if (userData.preferredCategories && userData.preferredCategories.length > 0) {
+          setPreferredCategories(userData.preferredCategories);
+        }
+      }
+    } catch {}
+  }, [currentUser]);
 
   useEffect(() => {
     const init = async () => {
@@ -100,315 +153,263 @@ const HomePage = () => {
     init();
   }, []);
 
-
-
-
-  const handleLogout = async () => {
-    try {
-      await auth.signOut();
-      await AsyncStorage.removeItem('DataForUser');
-      await AsyncStorage.removeItem('categories');
-      console.log('Categories removed from AsyncStorage');
-      await showAlert('Bye Bye 👋 \nWe will miss you 🤍', 'error');
-      setTimeout(() => {
-        router.replace("/Login");
-      }, 3000);
-    } catch (error) {
-      showAlert('Error', 'Logout failed. Please try again.', 'error');
-      console.error(error);
-    }
-  };
+  useEffect(() => {
+    fetchRecommendedProducts();
+  }, [fetchRecommendedProducts]);
 
   const fetchProducts = useCallback(async () => {
     try {
       setLoading(true);
-      const productsQuery = query(collection(db, "products"), orderBy("createdAt", "desc"), limit(20));
-
-      const unsubscribeListener = onSnapshot(productsQuery, (snapshot) => {
-        const productsData = snapshot.docs.map((doc) => ({
-          docId: doc.id,
-          ...doc.data(),
-        }));
-        setProducts(productsData);
+      const conditions = [
+        createOrderBy("createdAt", "desc"),
+        createLimit(20)
+      ];
+      const response = await getCollection("products", conditions);
+      if (response.success) {
+        setProducts(response.data);
         setLoading(false);
         setRefreshing(false);
-      }, (err) => {
-        console.error("Error fetching products:", err);
+        return true;
+      } else {
         setError("Unable to load products. Please try again later.");
         setLoading(false);
         setRefreshing(false);
-      });
-
-      return unsubscribeListener;
-    } catch (err) {
-      console.error("Error setting up products listener:", err);
+        return false;
+      }
+    } catch {
       setError("Something went wrong. Please try again later.");
       setLoading(false);
       setRefreshing(false);
-
-      return () => { };
+      return false;
     }
   }, []);
 
-  const fetchFavorites = useCallback(async () => {
-    if (!currentUser) return;
-
-    try {
-      const userDocRef = doc(db, "Users", currentUser.uid);
-      const userDoc = await getDoc(userDocRef);
-
-      if (userDoc.exists() && userDoc.data().Fav) {
-        setFavorites(userDoc.data().Fav || []);
-
-      }
-    } catch (error) {
-      console.error("Error fetching favorites:", error);
-    }
-  }, [currentUser]);
-
   useEffect(() => {
     let unsubscribe;
-
     const start = async () => {
-      unsubscribe = await fetchProducts();
-      fetchFavorites();
+      await fetchProducts();
+      updateUserDataFromFirebase();
     };
-
     start();
-
     return () => {
       if (typeof unsubscribe === 'function') {
         unsubscribe();
       }
     };
-  }, [fetchProducts, fetchFavorites]);
+  }, [fetchProducts, updateUserDataFromFirebase]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchProducts();
-    fetchFavorites();
-    fetchAndFilterProducts()
-  }, [fetchProducts, fetchFavorites, fetchAndFilterProducts]);
+    fetchRecommendedProducts();
+    updateUserDataFromFirebase();
+  }, [fetchProducts, storedCategories, fetchRecommendedProducts, updateUserDataFromFirebase]);
 
-  const applyDiscount = (price, discountPercentage) => {
-    return Math.floor(price - (price * discountPercentage) / 100);
-  };
-
-  const handleAddToCart = async (item) => {
-    if (!currentUser) {
-      showAlert('Please sign in to add products to your shopping cart', 'error');
-      setTimeout(() => {
-        router.replace("/Login");
-      }, 3000);
-      return;
-    }
-
+  const fetchAllProducts = useCallback(async () => {
     try {
-      const cartDocRef = doc(db, 'Users', currentUser.uid, 'cart', item.docId);
-      const cartDocSnap = await getDoc(cartDocRef);
-
-      if (cartDocSnap.exists()) {
-        await updateDoc(cartDocRef, {
-          quantity: increment(1),
-          updatedAt: new Date(),
-        });
-      } else {
-        await setDoc(cartDocRef, {
-          productId: item.docId,
-          name: item.name,
-          price: item.price,
-          image: item.image,
-          discount: item.discount || 0,
-          quantity: 1,
-          createdAt: new Date(),
-        });
+      const response = await getCollection("products");
+      if (response.success) {
+        setAllProducts(response.data);
       }
-      showAlert(`${String(item.name).split(' ').slice(0, 2).join(' ')} Added to your shopping cart`, 'success');
-    } catch (error) {
-      console.error("Error adding to cart:", error);
-      showAlert('Failed to add product to cart. Please try again.', 'error');
-    }
-  };
+    } catch {}
+  }, []);
 
-  const isItemFavorite = useCallback((itemId) => {
-    if (!currentUser || !favorites || favorites.length === 0) return false;
-    return favorites.includes(itemId);
-  }, [favorites, currentUser]);
-
-  const handleFavorite = async (item) => {
-    if (!currentUser) {
-      showAlert('Please log in to add items to your favorites.', 'error');
-      setTimeout(() => {
-        router.replace("/Login");
-      }, 2000);
-      return;
-    }
-
+  // Fetch ProductsManage doc which contains TopSelling and NewArrival arrays of product IDs
+  const fetchProductsManage = useCallback(async () => {
     try {
-      const userDocRef = doc(db, "Users", currentUser.uid);
-      const isFavorite = isItemFavorite(item.docId);
-
-      if (isFavorite) {
-        await updateDoc(userDocRef, {
-          Fav: arrayRemove(item.docId),
-        });
-        setFavorites(prev => prev.filter(id => id !== item.docId));
-        showAlert(`${String(item.name).split(' ').slice(0, 2).join(' ')} Removed from your favorites!`, 'error');
-      } else {
-        await updateDoc(userDocRef, {
-          Fav: arrayUnion(item.docId),
-        });
-        setFavorites(prev => [...prev, item.docId]);
-        showAlert(`${String(item.name).split(' ').slice(0, 2).join(' ')} Added to your favorites!`, 'success');
+      const response = await getCollection("ProductsManage");
+      if (response.success && Array.isArray(response.data) && response.data.length > 0) {
+        const doc = response.data[0];
+        setTopSellingIds(Array.isArray(doc.TopSelling) ? doc.TopSelling : []);
+        setNewArrivalIds(Array.isArray(doc.NewArrival) ? doc.NewArrival : []);
       }
+    } catch {}
+  }, []);
 
-    } catch (error) {
-      console.error("Error updating favorites:", error);
-      showAlert('Failed to update favorites. Please try again.', 'error');
-    }
-  };
-
-  const Item = ({ item }) => {
-    const isFavorite = isItemFavorite(item.docId);
-
-    return (
-      <TouchableOpacity onPress={() => router.push({ pathname: "/singlepage", params: { id: item.docId } })} disabled={load}>
-        <View style={styles.card}>
-          <View style={{ position: 'relative', width: '100%', height: 120 }}>
-            <Image
-              source={{ uri: item.image }}
-              style={styles.image}
-              resizeMethod="resize"
-              resizeMode="contain"
-              defaultSource={require('../../assets/images/loading-buffering.gif')}
-            />
-            {item.discount > 0 && (
-              <View style={styles.discountContainer}>
-                <Icon name="tag" size={14} color="#fff" />
-                <Text style={styles.discountText}>{item.discount}% OFF</Text>
-              </View>
-            )}
-            <TouchableOpacity
-              style={styles.favoriteButton}
-              onPress={() => handleFavorite(item)}
-              disabled={load}
-            >
-              <Icon name="heart" size={20} color={isFavorite ? "#E91E63" : "#fff"} />
-            </TouchableOpacity>
-          </View>
-
-          <Text style={styles.title} numberOfLines={2}>{item.name}</Text>
-
-          <View style={styles.priceContainer}>
-            <Text style={styles.oldPrice}>{formatNumber(item.price)} EGP</Text>
-            <Text style={styles.newPrice}>{formatNumber(applyDiscount(item.price, item.discount))} EGP</Text>
-          </View>
-
-          <TouchableOpacity
-            style={styles.addToCartButton}
-            onPress={() => handleAddToCart(item)}
-            disabled={load}
-          >
-            <Icon name="shopping-cart" size={20} color="#fff" />
-            <Text style={{ color: '#fff', marginLeft: 5 }}>Add to Cart</Text>
-          </TouchableOpacity>
-        </View>
-      </TouchableOpacity>
-    );
-  };
-
-  const Categories = [
-    { id: 1, name: "Mobile", image: "https://i.ibb.co/4ZhGCKn2/apple-iphone-16-pro-desert-1-3.jpg" },
-    { id: 2, name: "Computers", image: "https://i.ibb.co/xqvrtNZD/zh449-1.jpg" },
-    { id: 3, name: "TVs", image: "https://i.ibb.co/vvTrVWFD/tv556-1.jpg" },
-    { id: 4, name: "Men", image: "https://i.ibb.co/RGzqBrwk/1.jpg" },
-    { id: 5, name: "Women", image: "https://i.ibb.co/Kzr7MVxM/1.jpg" },
-    { id: 6, name: "Kids", image: "https://i.ibb.co/20TYN7Lz/1.jpg" },
-  ];
-
-  const formatNumber = (number) => {
-    return new Intl.NumberFormat().format(number);
-  };
+  useEffect(() => {
+    fetchAllProducts();
+    fetchProductsManage();
+  }, [fetchAllProducts, fetchProductsManage]);
 
   const topSellingProducts = useMemo(() => {
-    return [...products].sort((a, b) => (b.sold || 0) - (a.sold || 0)).slice(0, 10);
-  }, [products]);
+    // If ProductsManage provided IDs, map them to product objects from allProducts preserving order
+    if (topSellingIds && topSellingIds.length > 0 && allProducts.length > 0) {
+      return topSellingIds
+        .map(id => allProducts.find(p => p.id == id))
+        .filter(Boolean);
+    }
+    // fallback to previous behavior
+    return [...products].sort((a, b) => (b.sold || 0) - (a.sold || 0)).slice(0, 15);
+  }, [topSellingIds, allProducts, products]);
 
   const newProducts = useMemo(() => {
-    return products.slice(-5);
-  }, [products]);
+    // If ProductsManage provided IDs for new arrivals, map them to product objects
+    if (newArrivalIds && newArrivalIds.length > 0 && allProducts.length > 0) {
+      return newArrivalIds
+        .map(id => allProducts.find(p => p.id == id))
+        .filter(Boolean);
+    }
+    // fallback to previous behavior
+    return products.slice(-15);
+  }, [newArrivalIds, allProducts, products]);
 
+  const getSearchSuggestions = useCallback((query) => {
+    if (!query || query.length < 1) {
+      return [];
+    }
+    const lowercaseQuery = query.toLowerCase().trim();
+    return allProducts
+      .filter(product => product.name && product.name.toLowerCase().includes(lowercaseQuery))
+      .map(product => ({
+        id: product.id,
+        name: product.name,
+        image: product.image
+      }))
+      .slice(0, 8);
+  }, [allProducts]);
 
+  useEffect(() => {
+    if (allProducts.length > 0 && searchQuery.length > 0) {
+      setSearchSuggestions(getSearchSuggestions(searchQuery));
+      setShowSuggestions(true);
+    } else {
+      setSearchSuggestions([]);
+      setShowSuggestions(false);
+    }
+  }, [searchQuery, getSearchSuggestions, allProducts]);
+
+  const handleSelectSuggestion = (suggestion) => {
+    setSearchQuery(suggestion.name);
+    setShowSuggestions(false);
+    router.push({
+      pathname: "/(tabs)/products",
+      params: { searchTerm: suggestion.name }
+    });
+  };
+
+  const clearSearch = () => {
+    setSearchQuery('');
+    setShowSuggestions(false);
+  };
 
   if (error) {
     return (
-      <View style={styles.errorContainer}>
-        <Icon name="alert-circle" size={50} color="#E91E63" />
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={fetchProducts}>
-          <Text style={styles.retryButtonText}>Try Again</Text>
+      <View style={[styles.errorContainer, { backgroundColor: theme.background }]}>
+        <Icon name="alert-circle" size={50} color={theme.accentColor} />
+        <Text style={[styles.errorText, { color: theme.errorText }]}>{error}</Text>
+        <TouchableOpacity 
+          style={[styles.retryButton, { backgroundColor: theme.retryButtonBackground }]}
+          onPress={fetchProducts}
+        >
+          <Text style={[styles.retryButtonText, { color: theme.retryButtonText }]}>Try Again</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
+  const renderProductCard = ({ item }) => (
+    <ProductCard
+      item={item}
+      currentUser={currentUser}
+      onShowAlert={showAlert}
+      theme={theme}
+    />
+  );
+
   return (
     <>
       <Stack screenOptions={{ headerShown: false }} />
       <ScrollView
-        style={styles.container}
+        style={[styles.container, { backgroundColor: theme.background }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
+        keyboardShouldPersistTaps="handled"
       >
         <View style={styles.header}>
-          <TouchableOpacity onPress={handleLogout} disabled={load}>
-            <View style={styles.headerIconContainer}>
-              <MaterialIcons name="logout" size={24} color="white" />
-            </View>
-          </TouchableOpacity>
-
-
-
-
-
+          <View style={{ flex: 1 }}></View>
           <TouchableOpacity onPress={() => router.push("/cart")}>
-            <View style={styles.headerIconContainer}>
-              <Icon name="shopping-cart" size={20} color="#fff" />
+            <View style={[styles.headerIconContainer, { backgroundColor: theme.headerIconBackground }]}>
+              <Icon name="shopping-cart" size={20} color={theme.headerIconColor} />
             </View>
           </TouchableOpacity>
         </View>
-
-        <TouchableOpacity onPress={() => router.push("/Search")}>
-          <View style={styles.searchBar}>
-            <Icon name="search" size={20} color="#888" style={styles.icon} />
+        <View style={styles.searchContainer}>
+          <View style={[styles.searchBar, { 
+            backgroundColor: theme.searchBarBackground,
+            shadowColor: theme.searchBarShadow
+          }]}>
+            <Icon name="search" size={20} color={theme.searchIcon} style={styles.icon} />
             <TextInput
-              style={styles.input}
+              style={[styles.input, { color: theme.inputText }]}
               placeholder="Search for products..."
-              placeholderTextColor="#aaa"
-              editable={false}
+              placeholderTextColor={theme.inputPlaceholder}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              returnKeyType="search"
+              onSubmitEditing={() => {
+                if (searchQuery.trim()) {
+                  router.push({
+                    pathname: "/(tabs)/products",
+                    params: { searchTerm: searchQuery.trim() }
+                  });
+                  setShowSuggestions(false);
+                }
+              }}
             />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={clearSearch} style={styles.clearButton}>
+                <Icon name="x" size={16} color={theme.searchIcon} />
+              </TouchableOpacity>
+            )}
           </View>
-        </TouchableOpacity>
-        <Text style={styles.sectionTitle}>Categories</Text>
+          {showSuggestions && searchQuery.length > 0 && (
+            <View style={[styles.suggestionsContainer, { 
+              backgroundColor: theme.suggestionsBackground,
+              borderColor: theme.suggestionsBorder,
+              shadowColor: theme.searchBarShadow
+            }]}>
+              {searchSuggestions.length > 0 ? (
+                searchSuggestions.map((suggestion, index) => (
+                  <TouchableOpacity 
+                    key={index} 
+                    style={[styles.suggestionItem, { borderBottomColor: theme.suggestionItemBorder }]}
+                    onPress={() => handleSelectSuggestion(suggestion)}
+                  >
+                    <Icon name="search" size={16} color={theme.searchIcon} style={styles.suggestionIcon} />
+                    <Text style={[styles.suggestionText, { color: theme.suggestionText }]} numberOfLines={1}>
+                      {suggestion.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <View style={styles.suggestionItem}>
+                  <Icon name="info" size={16} color={theme.searchIcon} style={styles.suggestionIcon} />
+                  <Text style={[styles.noResultsText, { color: theme.noResultsText }]}>No matching products</Text>
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>Categories</Text>
         <FlatList
           data={Categories}
           keyExtractor={(item) => item.id.toString()}
           renderItem={({ item }) => (
             <TouchableOpacity onPress={() => {
               router.push({
-                pathname: "/DisplayCategories",
-                params: { title: item.name }
+                pathname: "/(tabs)/products",
+                params: { category: item.name }
               });
             }}>
               <View style={styles.categoryItem}>
                 <Image
                   source={{ uri: item.image }}
-                  style={styles.categoryImage}
+                  style={[styles.categoryImage, { backgroundColor: theme.categoryImageBackground }]}
                   defaultSource={require('../../assets/images/loading-buffering.gif')}
                 />
-                <Text style={styles.categoryText}>{item.name}</Text>
+                <Text style={[styles.categoryText, { color: theme.categoryText }]}>{item.name}</Text>
               </View>
             </TouchableOpacity>
           )}
@@ -416,7 +417,6 @@ const HomePage = () => {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.listContainer}
         />
-
         <View style={styles.imageContainer}>
           <Image
             source={{ uri: 'https://b.top4top.io/p_34113iqov1.png' }}
@@ -424,73 +424,102 @@ const HomePage = () => {
             resizeMode="contain"
           />
         </View>
-
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Top Selling</Text>
-
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Top Selling</Text>
+          <TouchableOpacity onPress={() => {
+            const idsForNav = (topSellingIds && topSellingIds.length > 0)
+              ? topSellingIds
+              : (topSellingProducts || []).map(p => p.id).filter(Boolean);
+            if (idsForNav && idsForNav.length > 0) {
+              router.push({
+                pathname: "/(tabs)/products",
+                params: {
+                  sectionTitle: "Top Selling",
+                  // encode to preserve brackets/commas when passed in URL params
+                  sectionIds: encodeURIComponent(JSON.stringify(idsForNav))
+                }
+              });
+            }
+          }}>
+            <Text style={[styles.seeAllText, { color: theme.accentColor }]}>Show More</Text>
+          </TouchableOpacity>
         </View>
-
         {loading && !load ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#E91E63" />
+            <ActivityIndicator size="large" color={theme.loadingIndicator} />
           </View>
         ) : (
           <FlatList
             data={topSellingProducts}
-            keyExtractor={(item) => item.docId.toString()}
-            renderItem={({ item }) => <Item item={item} />}
+            keyExtractor={(item) => item.id.toString()}
+            renderItem={renderProductCard}
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.listContainer}
           />
         )}
-
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>New Arrivals</Text>
-
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>New Arrivals</Text>
+          <TouchableOpacity onPress={() => {
+            const idsForNav = (newArrivalIds && newArrivalIds.length > 0)
+              ? newArrivalIds
+              : (newProducts || []).map(p => p.id).filter(Boolean);
+            if (idsForNav && idsForNav.length > 0) {
+              router.push({
+                pathname: "/(tabs)/products",
+                params: {
+                  sectionTitle: "New Arrivals",
+                  // encode to preserve brackets/commas when passed in URL params
+                  sectionIds: encodeURIComponent(JSON.stringify(idsForNav))
+                }
+              });
+            }
+          }}>
+            <Text style={[styles.seeAllText, { color: theme.accentColor }]}>Show More</Text>
+          </TouchableOpacity>
         </View>
-
         {loading && !load ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#E91E63" />
+            <ActivityIndicator size="large" color={theme.loadingIndicator} />
           </View>
         ) : (
           <FlatList
             data={newProducts}
-            keyExtractor={(item) => item.docId.toString()}
-            renderItem={({ item }) => <Item item={item} />}
+            keyExtractor={(item) => item.id.toString()}
+            renderItem={renderProductCard}
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.newIn}
           />
         )}
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recommended For You</Text>
-
-        </View>
-
-        {loading && !load ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#E91E63" />
-          </View>
-        ) : (
-          <FlatList
-            data={filteredItems.sort(() => Math.random() - 0.5).slice(0, 8)}
-            keyExtractor={(item) => item.docId}
-            renderItem={({ item }) => <Item item={item} />}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.newIn}
-          />
+        {preferredCategories.length > 0 && recommendedProducts.length > 0 && (
+          <>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Recommended For You</Text>
+            </View>
+            {loading && !load ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={theme.loadingIndicator} />
+              </View>
+            ) : (
+              <FlatList
+                data={recommendedProducts}
+                keyExtractor={(item) => item.id}
+                renderItem={renderProductCard}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.newIn}
+              />
+            )}
+          </>
         )}
       </ScrollView>
-
       {alertMsg && (
         <MiniAlert
           message={alertMsg}
           type={alertType}
           onHide={() => setAlertMsg(null)}
+          theme={theme}
         />
       )}
     </>
@@ -500,7 +529,6 @@ const HomePage = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "white",
     paddingHorizontal: 20,
     paddingTop: 20,
   },
@@ -509,19 +537,21 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 10,
   },
+  searchContainer: {
+    position: 'relative',
+    zIndex: 10,
+    marginBottom: 20,
+  },
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
     paddingHorizontal: 15,
-    paddingVertical: 6,
+    paddingVertical: 10,
     borderRadius: 25,
     elevation: 3,
-    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    marginBottom: 20,
   },
   icon: {
     marginRight: 10
@@ -529,7 +559,42 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: 16,
-    color: "#333"
+  },
+  clearButton: {
+    padding: 5,
+  },
+  suggestionsContainer: {
+    position: 'absolute',
+    top: 55,
+    left: 0,
+    right: 0,
+    borderRadius: 10,
+    elevation: 4,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 5,
+    zIndex: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    maxHeight: 300,
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 15,
+    borderBottomWidth: 1,
+  },
+  suggestionIcon: {
+    marginRight: 10,
+  },
+  suggestionText: {
+    fontSize: 14,
+    flex: 1,
+  },
+  noResultsText: {
+    fontSize: 14,
+    fontStyle: 'italic',
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -540,46 +605,14 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: "bold",
-    color: "#333",
     marginBottom: 10,
   },
   seeAllText: {
-    color: "#E91E63",
     fontSize: 14,
     fontWeight: "600",
   },
   listContainer: {
     paddingBottom: 20
-  },
-  card: {
-    width: cardWidth,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 12,
-    margin: 8,
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    alignItems: 'center',
-    height: 330,
-    justifyContent: 'space-between',
-  },
-  image: {
-    width: '100%',
-    height: 120,
-    resizeMode: 'contain',
-    borderRadius: 10,
-    backgroundColor: '#f9f9f9',
-  },
-  title: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginTop: 10,
-    textAlign: 'center',
-    color: '#333',
-    height: 40,
   },
   newIn: {
     paddingBottom: 20,
@@ -592,7 +625,6 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: '#f5f5f5',
   },
   categoryText: {
     marginTop: 5,
@@ -600,7 +632,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   headerIconContainer: {
-    backgroundColor: "#000",
     width: 45,
     height: 45,
     borderRadius: 20,
@@ -618,38 +649,6 @@ const styles = StyleSheet.create({
     width: '100%',
     marginBottom: 20,
   },
-  discountContainer: {
-    position: "absolute",
-    top: 10,
-    left: 10,
-    backgroundColor: "#E91E63",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  discountText: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "bold",
-  },
-  oldPrice: {
-    textDecorationLine: "line-through",
-    color: "#888",
-    fontSize: 15,
-    fontWeight: 'bold'
-  },
-  newPrice: {
-    color: "#E91E63",
-    fontWeight: "bold",
-    fontSize: 16,
-  },
-  priceContainer: {
-    flexDirection: 'column',
-    alignItems: 'center',
-  },
   loadingContainer: {
     height: 200,
     justifyContent: 'center',
@@ -663,38 +662,17 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 16,
-    color: '#555',
     textAlign: 'center',
     marginTop: 10,
   },
   retryButton: {
     marginTop: 20,
-    backgroundColor: '#E91E63',
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 25,
   },
   retryButtonText: {
-    color: 'white',
     fontWeight: 'bold',
-  },
-  favoriteButton: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    padding: 6,
-    borderRadius: 20,
-  },
-  addToCartButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginTop: 10,
-    width: "100%",
   },
 });
 

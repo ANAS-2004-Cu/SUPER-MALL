@@ -1,0 +1,22 @@
+
+preferredCategories --> settings
+
+catigory from home --> products ---------------------
+
+notification --> settings
+
+out of stock --> product card --> single page
+
+top edge --> all app
+
+top selling --> home --> products in firebase ------------
+
+new arrival --> home --> products in firebase
+
+no discount --> product card
+
+coboun --> cart
+
+
+
+payment

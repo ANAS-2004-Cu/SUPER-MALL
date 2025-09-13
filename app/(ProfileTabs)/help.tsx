@@ -48,18 +48,10 @@ const HelpTopicItem: React.FC<HelpTopicItemProps> = ({ icon, title, subtitle, ac
 const Help = () => {
   const [theme, setTheme] = useState(lightTheme);
 
-  useEffect(() => {
-    loadThemePreference();
-  }, []);
-
   const loadThemePreference = async () => {
     try {
       const themeMode = await AsyncStorage.getItem('ThemeMode');
-      if (themeMode === '2') {
-        setTheme(darkTheme);
-      } else {
-        setTheme(lightTheme);
-      }
+      setTheme(themeMode === '2' ? darkTheme : lightTheme);
     } catch (error) {
       console.error('Error loading theme preference:', error);
     }
@@ -77,6 +69,10 @@ const Help = () => {
     { icon: 'location-outline', title: 'Address', subtitle: 'Manage your saved addresses', route: './address' },
     { icon: 'cube-outline', title: 'Orders & Tracking', subtitle: 'Track your order, shipping updates', route: './orders' }
   ];
+
+  useEffect(() => {
+    loadThemePreference();
+  }, []);
 
   return (
     <>

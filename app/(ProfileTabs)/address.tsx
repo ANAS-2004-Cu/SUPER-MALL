@@ -21,65 +21,61 @@ interface Address {
   isDefault: boolean;
 }
 
-interface AddressCardProps {
+const AddressCard = ({ address, onEdit, onDelete, onSetDefault, theme }: {
   address: Address;
   onEdit: (address: Address) => void;
   onDelete: (id: string) => void;
   onSetDefault: (id: string) => void;
   theme: any;
-}
-
-const AddressCard: React.FC<AddressCardProps> = ({ address, onEdit, onDelete, onSetDefault, theme }) => {
-  return (
-    <View style={[styles.addressCard, { backgroundColor: theme.cardBackgroundColor }]}>
-      <View style={styles.addressContent}>
-        <View style={styles.addressHeader}>
-          <Text style={[styles.addressName, { color: theme.cardNameColor }]}>
-            {address.FullName}
-          </Text>
-          {address.isDefault && (
-            <View style={[styles.defaultBadge, { backgroundColor: theme.defaultBadgeColor }]}>
-              <Text style={[styles.defaultText, { color: theme.defaultTextColor }]}>Default</Text>
-            </View>
-          )}
-        </View>
-
-        <Text style={[styles.addressDetail, { color: theme.cardDetailColor }]}>
-          {address.Street}
+}) => (
+  <View style={[styles.addressCard, { backgroundColor: theme.cardBackgroundColor }]}>
+    <View style={styles.addressContent}>
+      <View style={styles.addressHeader}>
+        <Text style={[styles.addressName, { color: theme.cardNameColor }]}>
+          {address.FullName}
         </Text>
-        <Text style={[styles.addressDetail, { color: theme.cardDetailColor }]}>
-          {`${address.City}, ${address.State} ${address.ZIP}`}
-        </Text>
-        <Text style={[styles.addressDetail, { color: theme.cardDetailColor }]}>
-          {address.Phone}
-        </Text>
+        {address.isDefault && (
+          <View style={[styles.defaultBadge, { backgroundColor: theme.defaultBadgeColor }]}>
+            <Text style={[styles.defaultText, { color: theme.defaultTextColor }]}>Default</Text>
+          </View>
+        )}
       </View>
 
-      <View style={[styles.addressActions, { borderTopColor: theme.borderTopColor }]}>
-        <TouchableOpacity onPress={() => onEdit(address)} style={styles.actionButton}>
-          <Ionicons name="create-outline" size={20} color={theme.actionTextColor} />
-          <Text style={[styles.actionText, { color: theme.actionTextColor }]}>Edit</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity onPress={() => onDelete(address.id)} style={styles.actionButton}>
-          <Ionicons name="trash-outline" size={20} color={theme.actionWarningColor} />
-          <Text style={[styles.actionText, { color: theme.actionWarningColor }]}>Delete</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity onPress={() => onSetDefault(address.id)} style={styles.actionButton}>
-          <Ionicons
-            name={address.isDefault ? "star" : "star-outline"}
-            size={20}
-            color={theme.actionFavoriteColor}
-          />
-          <Text style={[styles.actionText, { color: theme.actionFavoriteColor }]}>
-            {address.isDefault ? "Remove Default" : "Set as Default"}
-          </Text>
-        </TouchableOpacity>
-      </View>
+      <Text style={[styles.addressDetail, { color: theme.cardDetailColor }]}>
+        {address.Street}
+      </Text>
+      <Text style={[styles.addressDetail, { color: theme.cardDetailColor }]}>
+        {`${address.City}, ${address.State} ${address.ZIP}`}
+      </Text>
+      <Text style={[styles.addressDetail, { color: theme.cardDetailColor }]}>
+        {address.Phone}
+      </Text>
     </View>
-  );
-};
+
+    <View style={[styles.addressActions, { borderTopColor: theme.borderTopColor }]}>
+      <TouchableOpacity onPress={() => onEdit(address)} style={styles.actionButton}>
+        <Ionicons name="create-outline" size={20} color={theme.actionTextColor} />
+        <Text style={[styles.actionText, { color: theme.actionTextColor }]}>Edit</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity onPress={() => onDelete(address.id)} style={styles.actionButton}>
+        <Ionicons name="trash-outline" size={20} color={theme.actionWarningColor} />
+        <Text style={[styles.actionText, { color: theme.actionWarningColor }]}>Delete</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity onPress={() => onSetDefault(address.id)} style={styles.actionButton}>
+        <Ionicons
+          name={address.isDefault ? "star" : "star-outline"}
+          size={20}
+          color={theme.actionFavoriteColor}
+        />
+        <Text style={[styles.actionText, { color: theme.actionFavoriteColor }]}>
+          {address.isDefault ? "Remove Default" : "Set as Default"}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  </View>
+);
 
 const EmptyAddresses = ({ theme }: { theme: any }) => (
   <View style={styles.emptyContainer}>
@@ -108,18 +104,18 @@ const Address = () => {
   const [theme, setTheme] = useState(lightTheme);
 
   useEffect(() => {
-    const loadTheme = async () => {
-      try {
-        const themeMode = await AsyncStorage.getItem('ThemeMode');
-        setTheme(themeMode === '2' ? darkTheme : lightTheme);
-      } catch (error) {
-        console.error('Error loading theme:', error);
-      }
-    };
-    
     loadTheme();
     fetchUserAddresses();
   }, []);
+
+  const loadTheme = async () => {
+    try {
+      const themeMode = await AsyncStorage.getItem('ThemeMode');
+      setTheme(themeMode === '2' ? darkTheme : lightTheme);
+    } catch (error) {
+      console.error('Error loading theme:', error);
+    }
+  };
 
   const showAlert = (message: string, type: 'success' | 'error' = 'success') => {
     setAlertMsg(message);
@@ -142,30 +138,33 @@ const Address = () => {
     return updateResult.success;
   };
 
+  const formatAddresses = (userAddresses: any[]) => {
+    return userAddresses
+      .map((address: any, index: number) => ({
+        id: address.id || `address-${index}`,
+        FullName: address.FullName || '',
+        Street: address.Street || '',
+        City: address.City || '',
+        State: address.State || '',
+        ZIP: address.ZIP || '',
+        Phone: address.Phone || '',
+        isDefault: address.isDefault || false,
+      }))
+      .sort((a: Address, b: Address) => (a.isDefault ? -1 : b.isDefault ? 1 : 0));
+  };
+
   const fetchUserAddresses = async () => {
     try {
       setLoading(true);
       const userAddresses = await getUserAddresses();
-      
+
       if (!userAddresses) {
         setLoading(false);
         setRefreshing(false);
         return;
       }
 
-      const formattedAddresses = userAddresses
-        .map((address: any, index: number) => ({
-          id: address.id || `address-${index}`,
-          FullName: address.FullName || '',
-          Street: address.Street || '',
-          City: address.City || '',
-          State: address.State || '',
-          ZIP: address.ZIP || '',
-          Phone: address.Phone || '',
-          isDefault: address.isDefault || false,
-        }))
-        .sort((a: Address, b: Address) => (a.isDefault ? -1 : b.isDefault ? 1 : 0));
-
+      const formattedAddresses = formatAddresses(userAddresses);
       setAddresses(formattedAddresses);
     } catch (error) {
       showAlert("Failed to load addresses. Please try again.", 'error');
@@ -221,7 +220,7 @@ const Address = () => {
     if (!addressToUpdate) return;
 
     const isSettingAsDefault = !addressToUpdate.isDefault;
-    
+
     await performAddressOperation(
       async () => {
         const updatedAddresses = userAddresses.map((addr: any) => ({
@@ -240,11 +239,11 @@ const Address = () => {
 
     const operation = async () => {
       let updatedAddresses;
-      
+
       if (isEditing) {
         const existingIndex = userAddresses.findIndex((addr: any) => addr.id === formData.id);
         if (existingIndex === -1) return false;
-        
+
         updatedAddresses = [...userAddresses];
         updatedAddresses[existingIndex] = {
           ...formData,
@@ -253,7 +252,7 @@ const Address = () => {
       } else {
         updatedAddresses = [...userAddresses, { ...formData, isDefault: false }];
       }
-      
+
       return await updateUserAddresses(updatedAddresses);
     };
 
@@ -290,10 +289,15 @@ const Address = () => {
     fetchUserAddresses();
   };
 
+  const getDeleteWarningMessage = () => {
+    const address = addresses.find(a => a.id === selectedAddressId);
+    return address?.isDefault ? "Warning: This is your default address." : undefined;
+  };
+
   return (
     <>
       <Stack.Screen name="address" options={{ headerShown: false }} />
-      <LinearGradient colors={theme.gradientColors  as [string, string, ...string[]]} style={styles.container}>
+      <LinearGradient colors={theme.gradientColors as [string, string, ...string[]]} style={styles.container}>
         {alertMsg && (
           <MiniAlert
             message={alertMsg}
@@ -309,9 +313,7 @@ const Address = () => {
           isLoading={deleteLoading}
           title="Delete Address"
           message="Are you sure you want to delete this address?"
-          warningMessage={selectedAddressId && addresses.find(a => a.id === selectedAddressId)?.isDefault
-            ? "Warning: This is your default address."
-            : undefined}
+          warningMessage={getDeleteWarningMessage()}
         />
 
         <View style={[styles.header, { borderBottomColor: theme.borderBottomColor }]}>

@@ -51,19 +51,13 @@ const AddressModal: React.FC<AddressModalProps> = ({
         const getThemeMode = async () => {
             try {
                 const themeMode = await AsyncStorage.getItem('ThemeMode');
-                if (themeMode === '2') {
-                    setCurrentTheme(darkTheme);
-                } else {
-                    setCurrentTheme(lightTheme);
-                }
-            } catch (error) {
-                console.error('Error reading theme mode from storage:', error);
-                setCurrentTheme(lightTheme); // Default to light theme
+                setCurrentTheme(themeMode === '2' ? darkTheme : lightTheme);
+            } catch {
+                setCurrentTheme(lightTheme);
             }
         };
-
         getThemeMode();
-    }, [visible]); // Re-check theme when modal becomes visible
+    }, [visible]);
 
     useEffect(() => {
         if (currentAddress) {
@@ -124,11 +118,9 @@ const AddressModal: React.FC<AddressModalProps> = ({
 
     const handleSubmit = async () => {
         if (!validateForm()) return;
-
         try {
             await onSubmit(formData);
-        } catch (error) {
-            console.error("Error submitting form:", error);
+        } catch {
             setAlertMsg('Failed to save address. Please try again.');
             setAlertType('error');
         }
@@ -263,80 +255,73 @@ const AddressModal: React.FC<AddressModalProps> = ({
                             {isEditing ? 'Edit Address' : 'Add New Address'}
                         </Text>
                     </View>
-
                     <ScrollView style={styles.formContainer}>
                         <View style={styles.formGroup}>
                             <Text style={styles.formLabel}>Full Name <Text style={styles.requiredMark}>*</Text></Text>
                             <TextInput
                                 style={styles.formInput}
                                 value={formData.FullName}
-                                onChangeText={(text) => handleFormChange('FullName', text)}
+                                onChangeText={text => handleFormChange('FullName', text)}
                                 placeholder="Enter your full name"
-                                placeholderTextColor={currentTheme.titleColor + '80'} // 50% opacity
+                                placeholderTextColor={currentTheme.titleColor + '80'}
                             />
                         </View>
-
                         <View style={styles.formGroup}>
                             <Text style={styles.formLabel}>Street Address <Text style={styles.requiredMark}>*</Text></Text>
                             <TextInput
                                 style={styles.formInput}
                                 value={formData.Street}
-                                onChangeText={(text) => handleFormChange('Street', text)}
+                                onChangeText={text => handleFormChange('Street', text)}
                                 placeholder="Enter street address"
-                                placeholderTextColor={currentTheme.titleColor + '80'} // 50% opacity
+                                placeholderTextColor={currentTheme.titleColor + '80'}
                             />
                         </View>
-
                         <View style={styles.formRow}>
                             <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
                                 <Text style={styles.formLabel}>City <Text style={styles.requiredMark}>*</Text></Text>
                                 <TextInput
                                     style={styles.formInput}
                                     value={formData.City}
-                                    onChangeText={(text) => handleFormChange('City', text)}
+                                    onChangeText={text => handleFormChange('City', text)}
                                     placeholder="City"
-                                    placeholderTextColor={currentTheme.titleColor + '80'} // 50% opacity
+                                    placeholderTextColor={currentTheme.titleColor + '80'}
                                 />
                             </View>
-
                             <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
                                 <Text style={styles.formLabel}>State <Text style={styles.requiredMark}>*</Text></Text>
                                 <TextInput
                                     style={styles.formInput}
                                     value={formData.State}
-                                    onChangeText={(text) => handleFormChange('State', text)}
+                                    onChangeText={text => handleFormChange('State', text)}
                                     placeholder="State"
-                                    placeholderTextColor={currentTheme.titleColor + '80'} // 50% opacity
+                                    placeholderTextColor={currentTheme.titleColor + '80'}
                                 />
                             </View>
                         </View>
-
                         <View style={styles.formRow}>
                             <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
                                 <Text style={styles.formLabel}>ZIP Code <Text style={styles.requiredMark}>*</Text></Text>
                                 <TextInput
                                     style={styles.formInput}
                                     value={formData.ZIP}
-                                    onChangeText={(text) => handleFormChange('ZIP', text)}
+                                    onChangeText={text => handleFormChange('ZIP', text)}
                                     placeholder="ZIP Code"
                                     keyboardType="number-pad"
-                                    placeholderTextColor={currentTheme.titleColor + '80'} // 50% opacity
+                                    placeholderTextColor={currentTheme.titleColor + '80'}
                                 />
                             </View>
-
                             <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
                                 <Text style={styles.formLabel}>Phone Number <Text style={styles.requiredMark}>*</Text></Text>
                                 <TextInput
                                     style={styles.formInput}
                                     value={formData.Phone}
-                                    onChangeText={(text) => handleFormChange('Phone', text)}
+                                    onChangeText={text => handleFormChange('Phone', text)}
                                     placeholder="Phone Number"
                                     keyboardType="phone-pad"
-                                    placeholderTextColor={currentTheme.titleColor + '80'} // 50% opacity
+                                    placeholderTextColor={currentTheme.titleColor + '80'}
                                 />
                             </View>
                         </View>
-
                         {isEditing && (
                             <View style={styles.noteContainer}>
                                 <Text style={styles.noteText}>
@@ -345,7 +330,6 @@ const AddressModal: React.FC<AddressModalProps> = ({
                             </View>
                         )}
                     </ScrollView>
-
                     <TouchableOpacity
                         style={styles.submitButton}
                         onPress={handleSubmit}

@@ -6,33 +6,37 @@ import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { darkTheme, lightTheme } from '../../Theme/ProfileTabs/AboutTheme';
 
+const teamMembers = [
+  "👤 Ahmed ezz aldin khalil",
+  "👤 Abdelrahman ahmed helmy",
+  "👤 Bavly momtaz",
+  "👤 Ramadan abdelnaser",
+  "👤 Ahmed saeed",
+  "👤 Anas gamal",
+  "👤 Abdelrahman ehab",
+  "👤 Abdallah ali khamis"
+];
+
 const AboutScreen = () => {
   const router = useRouter();
   const [theme, setTheme] = useState(lightTheme);
 
   useEffect(() => {
-    const getTheme = async () => {
-      try {
-        const themeMode = await AsyncStorage.getItem('ThemeMode');
-        if (themeMode === "2") {
-          setTheme(darkTheme);
-        } else {
-          setTheme(lightTheme);
-        }
-      } catch (error) {
-        console.error("Error reading theme from storage:", error);
-        setTheme(lightTheme); // Default to light theme on error
-      }
-    };
-    
-    getTheme();
-
-    // Set up a listener to check for theme changes
-    const intervalId = setInterval(getTheme, 1000);
+    loadTheme();
+    const intervalId = setInterval(loadTheme, 1000);
     return () => clearInterval(intervalId);
   }, []);
 
-  // Define styles dynamically based on the current theme
+  const loadTheme = async () => {
+    try {
+      const themeMode = await AsyncStorage.getItem('ThemeMode');
+      setTheme(themeMode === "2" ? darkTheme : lightTheme);
+    } catch (error) {
+      console.error("Error reading theme from storage:", error);
+      setTheme(lightTheme);
+    }
+  };
+
   const styles = StyleSheet.create({
     gradientContainer: {
       flex: 1,
@@ -66,12 +70,6 @@ const AboutScreen = () => {
       color: theme.textColor,
       marginTop: 10,
     },
-    bulletPoint: {
-      fontSize: 18,
-      color: theme.textColor,
-      marginTop: 8,
-      marginLeft: 10,
-    },
     teamMember: {
       fontSize: 18,
       color: theme.teamMemberColor,
@@ -94,11 +92,12 @@ const AboutScreen = () => {
       <ScrollView contentContainerStyle={styles.container}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => { router.back() }}
+          onPress={() => router.back()}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Ionicons name="arrow-back-circle-outline" size={36} color={theme.backButtonColor} />
         </TouchableOpacity>
+
         <Text style={styles.title}>About SuperMall</Text>
         <View style={styles.underline} />
 
@@ -115,14 +114,9 @@ const AboutScreen = () => {
         </Text>
 
         <Text style={styles.sectionTitle}>Our Team</Text>
-        <Text style={styles.teamMember}>👤 Ahmed ezz aldin khalil</Text>
-        <Text style={styles.teamMember}>👤 Abdelrahman ahmed helmy</Text>
-        <Text style={styles.teamMember}>👤 Bavly momtaz</Text>
-        <Text style={styles.teamMember}>👤 Ramadan abdelnaser</Text>
-        <Text style={styles.teamMember}>👤 Ahmed saeed</Text>
-        <Text style={styles.teamMember}>👤 Anas gamal</Text>
-        <Text style={styles.teamMember}>👤 Abdelrahman ehab</Text>
-        <Text style={styles.teamMember}>👤 Abdallah ali khamis</Text>
+        {teamMembers.map((member, index) => (
+          <Text key={index} style={styles.teamMember}>{member}</Text>
+        ))}
       </ScrollView>
     </LinearGradient>
   );

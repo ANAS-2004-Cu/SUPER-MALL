@@ -28,29 +28,20 @@ export default function GeminiChat() {
   const [theme, setTheme] = useState(lightTheme);
   const [appState, setAppState] = useState(AppState.currentState);
 
-  // Function to check and update theme
   const checkTheme = async () => {
     const themeMode = await AsyncStorage.getItem("ThemeMode");
     setTheme(themeMode === "2" ? darkTheme : lightTheme);
   };
 
   useEffect(() => {
-    // Initial theme fetch
     checkTheme();
-    
-    // Set up listeners for app state changes
     const subscription = AppState.addEventListener("change", nextAppState => {
       if (appState.match(/inactive|background/) && nextAppState === "active") {
-        // App has come to the foreground - check theme
         checkTheme();
       }
       setAppState(nextAppState);
     });
-    
-    // Set up a periodic check for theme changes
     const themeCheckInterval = setInterval(checkTheme, 1000);
-    
-    // Clean up
     return () => {
       subscription.remove();
       clearInterval(themeCheckInterval);
@@ -91,7 +82,6 @@ export default function GeminiChat() {
 
       setMessages([...updatedMessages, { role: 'assistant', content: botReply }]);
     } catch (error) {
-      console.error('API Error:', error);
       setMessages([...updatedMessages, {
         role: 'assistant',
         content: 'Error connecting to Google Gemini'

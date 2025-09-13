@@ -60,7 +60,6 @@ const Settings = () => {
     const [darkMode, setDarkMode] = useState(false);
     const [theme, setTheme] = useState(lightTheme);
 
-    // Load theme mode from AsyncStorage
     const loadThemeMode = async () => {
         try {
             const savedThemeMode = await AsyncStorage.getItem("ThemeMode");
@@ -68,23 +67,10 @@ const Settings = () => {
             setDarkMode(isDarkMode);
             setTheme(isDarkMode ? darkTheme : lightTheme);
         } catch (error) {
-            console.error("Error loading theme mode:", error);
             setTheme(lightTheme);
         }
     };
 
-    useEffect(() => {
-        loadThemeMode();
-    }, []);
-
-    // Check for theme changes when screen comes into focus
-    useFocusEffect(
-        useCallback(() => {
-            loadThemeMode();
-        }, [])
-    );
-
-    // Save theme mode to AsyncStorage
     const handleDarkModeToggle = async (value: boolean) => {
         try {
             const themeMode = value ? "2" : "1";
@@ -139,6 +125,16 @@ const Settings = () => {
         },
     ];
 
+    useEffect(() => {
+        loadThemeMode();
+    }, []);
+
+    useFocusEffect(
+        useCallback(() => {
+            loadThemeMode();
+        }, [])
+    );
+
     return (
         <>
             <Stack.Screen name="settings" options={{ headerShown: false }} />
@@ -163,7 +159,6 @@ const Settings = () => {
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={theme.styles.scrollContent}
                 >
-                    {/* App Settings */}
                     <View style={theme.styles.sectionContainer}>
                         <Text style={theme.styles.sectionTitle}>App Settings</Text>
                         {appSettings.map((setting, index) => (

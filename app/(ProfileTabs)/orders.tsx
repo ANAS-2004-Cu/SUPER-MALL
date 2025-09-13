@@ -38,19 +38,10 @@ const Orders = () => {
   const [totalSpent, setTotalSpent] = useState(0);
   const [theme, setTheme] = useState(lightTheme);
 
-  useEffect(() => {
-    fetchUserOrders();
-    loadThemePreference();
-  }, []);
-
   const loadThemePreference = async () => {
     try {
       const themeMode = await AsyncStorage.getItem('ThemeMode');
-      if (themeMode === '2') {
-        setTheme(darkTheme);
-      } else {
-        setTheme(lightTheme);
-      }
+      setTheme(themeMode === '2' ? darkTheme : lightTheme);
     } catch (error) {
       console.error('Error loading theme preference:', error);
     }
@@ -237,6 +228,11 @@ const Orders = () => {
       ))}
     </View>
   );
+
+  useEffect(() => {
+    fetchUserOrders();
+    loadThemePreference();
+  }, []);
 
   return (
     <>

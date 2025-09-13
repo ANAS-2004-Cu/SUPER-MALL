@@ -14,8 +14,7 @@ const Profile = () => {
   const [theme, setTheme] = useState(lightTheme);
   const [appState, setAppState] = useState(AppState.currentState);
 
-  // Function to check and update theme
-  const checkTheme = async () => {
+  const updateTheme = async () => {
     const themeMode = await AsyncStorage.getItem("ThemeMode");
     setTheme(themeMode === "2" ? darkTheme : lightTheme);
   };
@@ -29,24 +28,19 @@ const Profile = () => {
         setIsLoggedIn(data !== "undefined");
       }
     };
-    
-    // Initial theme fetch
-    checkTheme();
+
+    updateTheme();
     fetchUserData();
-    
-    // Set up listeners for app state changes
+
     const subscription = AppState.addEventListener("change", nextAppState => {
       if (appState.match(/inactive|background/) && nextAppState === "active") {
-        // App has come to the foreground - check theme
-        checkTheme();
+        updateTheme();
       }
       setAppState(nextAppState);
     });
-    
-    // Set up a periodic check for theme changes
-    const themeCheckInterval = setInterval(checkTheme, 1000);
-    
-    // Clean up
+
+    const themeCheckInterval = setInterval(updateTheme, 1000);
+
     return () => {
       subscription.remove();
       clearInterval(themeCheckInterval);
@@ -70,23 +64,21 @@ const Profile = () => {
     try {
       const result = await signOut();
       if (result.success) {
-        // Clear user data from AsyncStorage
         await AsyncStorage.removeItem("UserObject");
         setUserData(null);
         setIsLoggedIn(false);
         showAlert("Successfully signed out", 'success');
-        // Optionally redirect to login or home
         router.push("../Authentication/Login");
       } else {
         showAlert(result.error || "Failed to sign out", 'error');
       }
-    } catch (error) {
+    } catch {
       showAlert("An error occurred while signing out", 'error');
     }
   };
 
   return (
-    <ScrollView 
+    <ScrollView
       style={[styles.container, theme.container]}
       contentContainerStyle={styles.contentContainer}
       showsVerticalScrollIndicator={false}
@@ -110,12 +102,12 @@ const Profile = () => {
       <View style={[styles.infobox, theme.infobox]}>
         <View style={styles.info}>
           <Text style={[styles.name, theme.name]}>
-            {String(userData?.username).toUpperCase() == "UNDEFINED"
+            {String(userData?.username).toUpperCase() === "UNDEFINED"
               ? "Please Login..."
               : userData?.username}
           </Text>
           <Text style={[styles.mail, theme.mail]}>
-            {String(userData?.email).toLowerCase() == "undefined"
+            {String(userData?.email).toLowerCase() === "undefined"
               ? "Please Login..."
               : String(userData?.email).toLowerCase()}
           </Text>
@@ -136,7 +128,7 @@ const Profile = () => {
         activeOpacity={0.6}
       >
         <Text style={[styles.textb, theme.name]}>Orders</Text>
-        <View style={[styles.arrow, theme.arrow]}></View>
+        <View style={[styles.arrow, theme.arrow]} />
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -145,7 +137,7 @@ const Profile = () => {
         activeOpacity={0.6}
       >
         <Text style={[styles.textb, theme.name]}>Address</Text>
-        <View style={[styles.arrow, theme.arrow]}></View>
+        <View style={[styles.arrow, theme.arrow]} />
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -154,7 +146,7 @@ const Profile = () => {
         activeOpacity={0.6}
       >
         <Text style={[styles.textb, theme.name]}>Wishlist</Text>
-        <View style={[styles.arrow, theme.arrow]}></View>
+        <View style={[styles.arrow, theme.arrow]} />
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -163,7 +155,7 @@ const Profile = () => {
         activeOpacity={0.6}
       >
         <Text style={[styles.textb, theme.name]}>Help & Support</Text>
-        <View style={[styles.arrow, theme.arrow]}></View>
+        <View style={[styles.arrow, theme.arrow]} />
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -172,16 +164,16 @@ const Profile = () => {
         activeOpacity={0.6}
       >
         <Text style={[styles.textb, theme.name]}>About</Text>
-        <View style={[styles.arrow, theme.arrow]}></View>
+        <View style={[styles.arrow, theme.arrow]} />
       </TouchableOpacity>
 
       <TouchableOpacity
         style={[styles.profiletabs, theme.profiletabs]}
-        onPress={()  => router.push("../(ProfileTabs)/Settings")}
+        onPress={() => router.push("../(ProfileTabs)/Settings")}
         activeOpacity={0.6}
       >
         <Text style={[styles.textb, theme.name]}>Settings</Text>
-        <View style={[styles.arrow, theme.arrow]}></View>
+        <View style={[styles.arrow, theme.arrow]} />
       </TouchableOpacity>
 
       {isLoggedIn && (
@@ -203,8 +195,8 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     alignItems: "center",
-    paddingTop: 80
-    },
+    paddingTop: 80,
+  },
   profiletabs: {
     width: "90%",
     height: 53,

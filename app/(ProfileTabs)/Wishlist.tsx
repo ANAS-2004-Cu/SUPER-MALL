@@ -44,32 +44,14 @@ const Wishlist = () => {
 
   const userId = auth.currentUser?.uid;
 
-  // Load theme from AsyncStorage
-  useEffect(() => {
-    const loadTheme = async () => {
-      try {
-        const themeMode = await AsyncStorage.getItem('ThemeMode');
-        setTheme(themeMode === '2' ? darkTheme : lightTheme);
-      } catch (error) {
-        console.error('Error loading theme:', error);
-        setTheme(lightTheme);
-      }
-    };
-    
-    loadTheme();
-  }, []);
-
-  // Listen for theme changes
-  useFocusEffect(
-    useCallback(() => {
-      const checkTheme = async () => {
-        const themeMode = await AsyncStorage.getItem('ThemeMode');
-        setTheme(themeMode === '2' ? darkTheme : lightTheme);
-      };
-      
-      checkTheme();
-    }, [])
-  );
+  const loadTheme = async () => {
+    try {
+      const themeMode = await AsyncStorage.getItem('ThemeMode');
+      setTheme(themeMode === '2' ? darkTheme : lightTheme);
+    } catch (error) {
+      setTheme(lightTheme);
+    }
+  };
 
   const formatPrice = (price: number) => price?.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") || "0";
 
@@ -103,24 +85,11 @@ const Wishlist = () => {
       const productsData = await Promise.all(productPromises);
       setFavorites(productsData.filter(Boolean) as Product[]);
     } catch (err) {
-      console.error("Error fetching favorites:", err);
       setError('Failed to load favorites');
     } finally {
       setLoading(false);
     }
   };
-
-  // Fetch on component mount
-  useEffect(() => {
-    fetchFavorites();
-  }, [userId]);
-
-  // Fetch every time the screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      fetchFavorites();
-    }, [userId])
-  );
 
   const removeFromFavorites = async () => {
     if (!selectedProduct?.id || !userId) return;
@@ -141,7 +110,6 @@ const Wishlist = () => {
         setAlertType('error');
       }
     } catch (err) {
-      console.error("Error removing from favorites:", err);
       setAlertMsg("Failed to remove item from favorites");
       setAlertType('error');
     } finally {
@@ -282,6 +250,21 @@ const Wishlist = () => {
       </>
     );
   };
+
+  useEffect(() => {
+    loadTheme();
+  }, []);
+
+  useEffect(() => {
+    fetchFavorites();
+  }, [userId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadTheme();
+      fetchFavorites();
+    }, [userId])
+  );
 
   return (
     <>

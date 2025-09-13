@@ -1,14 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import {
-    Dimensions,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    TouchableWithoutFeedback,
-    View
+  Dimensions,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  View
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import { darkModalTheme, lightModalTheme } from '../Theme/Modal/FilterModalTheme';
@@ -20,22 +20,22 @@ const FilterModal = ({
     onClose,
     categories = [],
     selectedCategory,
-    setSelectedCategory,
     sortBy,
-    setSortBy,
     onApply,
     maxPrice = 10000,
-    darkMode = false
+    darkMode = false,
+    topSelling = false,
+    newArrival = false
 }) => {
     const [localCategory, setLocalCategory] = useState(selectedCategory);
     const [localSortBy, setLocalSortBy] = useState(sortBy);
+    const [localTopSelling, setLocalTopSelling] = useState(topSelling);
+    const [localNewArrival, setLocalNewArrival] = useState(newArrival);
     const [minPrice, setMinPrice] = useState('0');
     const [maxPriceValue, setMaxPriceValue] = useState(maxPrice.toString());
 
-    // استخدام ملف الثيم الجديد
     const theme = darkMode ? darkModalTheme : lightModalTheme;
 
-    // Predefined price ranges
     const priceRanges = [
         { label: 'All Prices', min: '0', max: maxPrice.toString() },
         { label: 'Under 500', min: '0', max: '500' },
@@ -47,24 +47,24 @@ const FilterModal = ({
 
     useEffect(() => {
         if (visible) {
-            // Reset local states when modal opens
             setLocalCategory(selectedCategory);
             setLocalSortBy(sortBy);
+            setLocalTopSelling(topSelling);
+            setLocalNewArrival(newArrival);
             setMinPrice('0');
             setMaxPriceValue(maxPrice.toString());
         }
-    }, [visible, selectedCategory, sortBy, maxPrice]);
+    }, [visible, selectedCategory, sortBy, maxPrice, topSelling, newArrival]);
 
     const handleApply = () => {
-        // Convert string inputs to numbers
         const minPriceNum = parseInt(minPrice) || 0;
         const maxPriceNum = parseInt(maxPriceValue) || maxPrice;
-
-        // Pass back the selected filters
         onApply({
             category: localCategory,
             sortBy: localSortBy,
-            priceRange: [minPriceNum, maxPriceNum]
+            priceRange: [minPriceNum, maxPriceNum],
+            topSelling: !!localTopSelling,
+            newArrival: !!localNewArrival
         });
         onClose();
     };
@@ -72,6 +72,8 @@ const FilterModal = ({
     const handleReset = () => {
         setLocalCategory('All');
         setLocalSortBy('name');
+        setLocalTopSelling(false);
+        setLocalNewArrival(false);
         setMinPrice('0');
         setMaxPriceValue(maxPrice.toString());
     };
@@ -99,8 +101,31 @@ const FilterModal = ({
                                 </TouchableOpacity>
                             </View>
 
+                            {/* Top toggles: placed before other filter sections */}
+                            <View style={[styles.topTogglesContainer]}>
+                                <TouchableOpacity
+                                    style={[
+                                        styles.toggleButton,
+                                        localTopSelling ? { backgroundColor: theme.selectedChipBackground, borderColor: theme.selectedChipBorderColor } : { borderColor: theme.chipBorderColor, backgroundColor: theme.chipBackground }
+                                    ]}
+                                    onPress={() => setLocalTopSelling(prev => !prev)}
+                                >
+                                    <Icon name={localTopSelling ? 'check-circle' : 'circle'} size={18} color={localTopSelling ? theme.checkIconActiveColor : theme.checkIconInactiveColor} />
+                                    <Text style={[styles.toggleText, { color: theme.textColor }]}>Top Selling</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[
+                                        styles.toggleButton,
+                                        localNewArrival ? { backgroundColor: theme.selectedChipBackground, borderColor: theme.selectedChipBorderColor } : { borderColor: theme.chipBorderColor, backgroundColor: theme.chipBackground }
+                                    ]}
+                                    onPress={() => setLocalNewArrival(prev => !prev)}
+                                >
+                                    <Icon name={localNewArrival ? 'check-circle' : 'circle'} size={18} color={localNewArrival ? theme.checkIconActiveColor : theme.checkIconInactiveColor} />
+                                    <Text style={[styles.toggleText, { color: theme.textColor }]}>New Arrival</Text>
+                                </TouchableOpacity>
+                            </View>
+
                             <ScrollView style={styles.scrollContent}>
-                                {/* Categories Section */}
                                 <View style={[styles.section, { borderBottomColor: theme.borderColor }]}>
                                     <Text style={[styles.sectionTitle, { color: theme.sectionTitleColor }]}>Categories</Text>
                                     <View style={styles.categoriesContainer}>
@@ -109,13 +134,13 @@ const FilterModal = ({
                                                 key={category}
                                                 style={[
                                                     styles.categoryChip,
-                                                    { 
-                                                        backgroundColor: localCategory === category 
-                                                            ? theme.selectedChipBackground 
+                                                    {
+                                                        backgroundColor: localCategory === category
+                                                            ? theme.selectedChipBackground
                                                             : theme.chipBackground,
-                                                        borderColor: localCategory === category 
-                                                            ? theme.selectedChipBorderColor 
-                                                            : theme.chipBorderColor 
+                                                        borderColor: localCategory === category
+                                                            ? theme.selectedChipBorderColor
+                                                            : theme.chipBorderColor
                                                     }
                                                 ]}
                                                 onPress={() => setLocalCategory(category)}
@@ -123,10 +148,10 @@ const FilterModal = ({
                                                 <Text
                                                     style={[
                                                         styles.categoryChipText,
-                                                        { 
-                                                            color: localCategory === category 
-                                                                ? theme.selectedChipTextColor 
-                                                                : theme.chipTextColor 
+                                                        {
+                                                            color: localCategory === category
+                                                                ? theme.selectedChipTextColor
+                                                                : theme.chipTextColor
                                                         }
                                                     ]}
                                                 >
@@ -136,19 +161,15 @@ const FilterModal = ({
                                         ))}
                                     </View>
                                 </View>
-
-                                {/* Price Range Section */}
                                 <View style={[styles.section, { borderBottomColor: theme.borderColor }]}>
                                     <Text style={[styles.sectionTitle, { color: theme.sectionTitleColor }]}>Price Range</Text>
-
-                                    {/* Predefined price ranges */}
                                     <View style={styles.priceRangesContainer}>
                                         {priceRanges.map((range, index) => (
                                             <TouchableOpacity
                                                 key={index}
                                                 style={[
                                                     styles.priceRangeButton,
-                                                    { 
+                                                    {
                                                         backgroundColor: minPrice === range.min && maxPriceValue === range.max
                                                             ? theme.selectedChipBackground
                                                             : theme.chipBackground,
@@ -162,10 +183,10 @@ const FilterModal = ({
                                                 <Text
                                                     style={[
                                                         styles.priceRangeText,
-                                                        { 
+                                                        {
                                                             color: minPrice === range.min && maxPriceValue === range.max
                                                                 ? theme.selectedChipTextColor
-                                                                : theme.chipTextColor 
+                                                                : theme.chipTextColor
                                                         }
                                                     ]}
                                                 >
@@ -174,18 +195,19 @@ const FilterModal = ({
                                             </TouchableOpacity>
                                         ))}
                                     </View>
-
-                                    {/* Custom price range input */}
                                     <Text style={[styles.customRangeLabel, { color: theme.labelColor }]}>Custom Price Range (EGP)</Text>
                                     <View style={styles.customPriceInputContainer}>
                                         <View style={styles.priceInputWrapper}>
                                             <Text style={[styles.priceInputLabel, { color: theme.labelColor }]}>Min</Text>
                                             <TextInput
-                                                style={[styles.priceInput, { 
-                                                    backgroundColor: theme.inputBackground,
-                                                    borderColor: theme.inputBorderColor,
-                                                    color: theme.textColor
-                                                }]}
+                                                style={[
+                                                    styles.priceInput,
+                                                    {
+                                                        backgroundColor: theme.inputBackground,
+                                                        borderColor: theme.inputBorderColor,
+                                                        color: theme.textColor
+                                                    }
+                                                ]}
                                                 value={minPrice}
                                                 onChangeText={setMinPrice}
                                                 keyboardType="numeric"
@@ -197,11 +219,14 @@ const FilterModal = ({
                                         <View style={styles.priceInputWrapper}>
                                             <Text style={[styles.priceInputLabel, { color: theme.labelColor }]}>Max</Text>
                                             <TextInput
-                                                style={[styles.priceInput, { 
-                                                    backgroundColor: theme.inputBackground,
-                                                    borderColor: theme.inputBorderColor,
-                                                    color: theme.textColor
-                                                }]}
+                                                style={[
+                                                    styles.priceInput,
+                                                    {
+                                                        backgroundColor: theme.inputBackground,
+                                                        borderColor: theme.inputBorderColor,
+                                                        color: theme.textColor
+                                                    }
+                                                ]}
                                                 value={maxPriceValue}
                                                 onChangeText={setMaxPriceValue}
                                                 keyboardType="numeric"
@@ -211,13 +236,11 @@ const FilterModal = ({
                                         </View>
                                     </View>
                                 </View>
-
-                                {/* Sort By Section */}
                                 <View style={[styles.section, { borderBottomColor: theme.borderColor }]}>
                                     <Text style={[styles.sectionTitle, { color: theme.sectionTitleColor }]}>Sort By</Text>
                                     <TouchableOpacity
                                         style={[
-                                            styles.sortOption, 
+                                            styles.sortOption,
                                             localSortBy === 'name' && { backgroundColor: theme.selectedOptionBackground }
                                         ]}
                                         onPress={() => setLocalSortBy('name')}
@@ -229,10 +252,9 @@ const FilterModal = ({
                                         />
                                         <Text style={[styles.sortOptionText, { color: theme.textColor }]}>Alphabetical (A-Z)</Text>
                                     </TouchableOpacity>
-
                                     <TouchableOpacity
                                         style={[
-                                            styles.sortOption, 
+                                            styles.sortOption,
                                             localSortBy === 'priceLow' && { backgroundColor: theme.selectedOptionBackground }
                                         ]}
                                         onPress={() => setLocalSortBy('priceLow')}
@@ -244,10 +266,9 @@ const FilterModal = ({
                                         />
                                         <Text style={[styles.sortOptionText, { color: theme.textColor }]}>Price: Low to High</Text>
                                     </TouchableOpacity>
-
                                     <TouchableOpacity
                                         style={[
-                                            styles.sortOption, 
+                                            styles.sortOption,
                                             localSortBy === 'priceHigh' && { backgroundColor: theme.selectedOptionBackground }
                                         ]}
                                         onPress={() => setLocalSortBy('priceHigh')}
@@ -261,7 +282,6 @@ const FilterModal = ({
                                     </TouchableOpacity>
                                 </View>
                             </ScrollView>
-
                             <View style={[styles.footer, { borderTopColor: theme.borderColor }]}>
                                 <TouchableOpacity
                                     style={[styles.resetButton, { borderColor: theme.buttonTextColor }]}
@@ -269,7 +289,6 @@ const FilterModal = ({
                                 >
                                     <Text style={[styles.resetButtonText, { color: theme.buttonTextColor }]}>Reset</Text>
                                 </TouchableOpacity>
-
                                 <TouchableOpacity
                                     style={[styles.applyButton, { backgroundColor: theme.applyButtonBackground }]}
                                     onPress={handleApply}
@@ -417,6 +436,24 @@ const styles = StyleSheet.create({
         flex: 2,
     },
     applyButtonText: {
+        fontWeight: '600',
+    },
+    topTogglesContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        padding: 16,
+    },
+    toggleButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 16,
+        borderWidth: 1,
+        marginRight: 8,
+    },
+    toggleText: {
+        marginLeft: 8,
         fontWeight: '600',
     },
 });
