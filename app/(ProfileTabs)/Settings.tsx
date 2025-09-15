@@ -8,8 +8,9 @@ import {
     Switch,
     Text,
     TouchableOpacity,
-    View,
+    View
 } from "react-native";
+import { auth, getUserData, updateDocument } from "../../Firebase/Firebase";
 import { darkTheme, lightTheme } from "../../Theme/ProfileTabs/SettingsTheme";
 
 interface SettingItemProps {
@@ -55,10 +56,20 @@ const SettingItem: React.FC<SettingItemProps> = ({
     );
 };
 
+// تعريف نوع بيانات الفئة
+type Category = {
+    id: string;
+    name: string;
+};
+
 const Settings = () => {
     const [notifications, setNotifications] = useState(true);
     const [darkMode, setDarkMode] = useState(false);
     const [theme, setTheme] = useState(lightTheme);
+    const [showDropdown, setShowDropdown] = useState<boolean>(false);
+    const [availableCategories, setAvailableCategories] = useState<Category[]>([]);
+    const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+    const [savingCategories, setSavingCategories] = useState<boolean>(false);
 
     const loadThemeMode = async () => {
         try {
@@ -80,6 +91,78 @@ const Settings = () => {
         } catch (error) {
             console.error("Error saving theme mode:", error);
         }
+    };
+
+    const loadAvailableCategories = async () => {
+        try {
+            const raw = await AsyncStorage.getItem('AvilableCategory');
+            let arr: unknown[];
+            try {
+                arr = JSON.parse(raw || "[]");
+            } catch {
+                arr = raw ? [raw] : [];
+            }
+            const parsed: Category[] = arr.map((c: any, idx: number): Category | null => {
+                if (!c) return null;
+                if (typeof c === 'string') {
+                    const stripped = c.replace(/^\s*\{?\s*/, '').replace(/\s*\}?\s*$/, '');
+                    const [namePart] = stripped.split(',');
+                    const name = (namePart || '').trim();
+                    if (!name) return null;
+                    return { id: `pm-${idx}`, name };
+                }
+                if (typeof c === 'object') {
+                    const name = c.categoryname || c.categoryName || c.name || c.category || c.title || '';
+                    const id = c.id || c._id || `pm-${idx}`;
+                    if (!name) return null;
+                    return { id: String(id), name: String(name) };
+                }
+                return null;
+            }).filter((cat): cat is Category => !!cat);
+            setAvailableCategories(parsed);
+        } catch {
+            setAvailableCategories([]);
+        }
+    };
+
+    const loadUserPreferredCategories = async () => {
+        try {
+            const userObjectJson = await AsyncStorage.getItem('UserObject');
+            if (userObjectJson) {
+                const userObject = JSON.parse(userObjectJson);
+                if (userObject && Array.isArray(userObject.preferredCategories)) {
+                    setSelectedCategories(userObject.preferredCategories.map((name: string) => String(name)));
+                }
+            }
+        } catch {}
+    };
+
+    const openCategoryDropdown = async () => {
+        await loadAvailableCategories();
+        await loadUserPreferredCategories();
+        setShowDropdown((prev: boolean) => !prev);
+    };
+
+    const savePreferredCategories = async () => {
+        if (!auth.currentUser) return;
+        setSavingCategories(true);
+        try {
+            const result = await updateDocument("Users", auth.currentUser.uid, { preferredCategories: selectedCategories });
+            if (result.success) {
+                const userData = await getUserData(auth.currentUser.uid);
+                if (userData) {
+                    await AsyncStorage.setItem('UserObject', JSON.stringify(userData));
+                }
+                setShowDropdown(false);
+            }
+        } catch {}
+        setSavingCategories(false);
+    };
+
+    const toggleCategory = (name: string) => {
+        setSelectedCategories((prev: string[]) =>
+            prev.includes(name) ? prev.filter((n: string) => n !== name) : [...prev, name]
+        );
     };
 
     const appSettings = [
@@ -123,6 +206,13 @@ const Settings = () => {
             ),
             showArrow: false,
         },
+        {
+            icon: "list-outline" as const,
+            title: "Preferred Categories",
+            subtitle: "Choose your favorite categories",
+            action: openCategoryDropdown,
+            showArrow: true,
+        },
     ];
 
     useEffect(() => {
@@ -162,11 +252,89 @@ const Settings = () => {
                     <View style={theme.styles.sectionContainer}>
                         <Text style={theme.styles.sectionTitle}>App Settings</Text>
                         {appSettings.map((setting, index) => (
-                            <SettingItem 
-                                key={index} 
-                                {...setting} 
-                                theme={theme}
-                            />
+                            <View key={index}>
+                                <SettingItem 
+                                    {...setting} 
+                                    theme={theme}
+                                />
+                                {setting.title === "Preferred Categories" && showDropdown && (
+                                    <View style={{                                        borderRadius: 14,
+                                        padding: 18,
+                                        marginTop: 8,
+                                        marginBottom: 16,
+                                        elevation: 2,
+                                        shadowColor: "#000",
+                                        shadowOpacity: 0.07,
+                                        shadowRadius: 6,
+                                        shadowOffset: { width: 0, height: 2 },
+                                        borderWidth: 1,
+                                        borderColor: "#e0e0e0",
+                                    }}>
+                                        <Text style={{ fontSize: 17, fontWeight: 'bold', marginBottom: 12, color: theme.colors.icon || "#007AFF" }}>
+                                            Select your preferred categories
+                                        </Text>
+                                        <ScrollView style={{ maxHeight: 200 }}>
+                                            {availableCategories.map((cat: Category) => (
+                                                <TouchableOpacity
+                                                    key={cat.id}
+                                                    style={{
+                                                        flexDirection: 'row',
+                                                        alignItems: 'center',
+                                                        paddingVertical: 10,
+                                                        borderBottomWidth: 1,
+                                                        borderBottomColor: "#ececec",
+                                                    }}
+                                                    onPress={() => toggleCategory(cat.name)}
+                                                >
+                                                    <Ionicons
+                                                        name={selectedCategories.includes(cat.name) ? "checkbox" : "square-outline"}
+                                                        size={22}
+                                                        color={selectedCategories.includes(cat.name) ? theme.colors.icon || "#007AFF" : "#bbb"}
+                                                        style={{ marginRight: 12 }}
+                                                    />
+                                                    <Text style={{ fontSize: 15, color: theme.colors.text?.primary || "#333" }}>{cat.name}</Text>
+                                                </TouchableOpacity>
+                                            ))}
+                                        </ScrollView>
+                                        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 18 }}>
+                                            <TouchableOpacity
+                                                style={{
+                                                    backgroundColor: theme.colors.icon || "#007AFF",
+                                                    paddingVertical: 10,
+                                                    paddingHorizontal: 22,
+                                                    borderRadius: 8,
+                                                    alignItems: "center",
+                                                    marginRight: 8,
+                                                    flexDirection: "row",
+                                                }}
+                                                onPress={savePreferredCategories}
+                                                disabled={savingCategories}
+                                            >
+                                                {savingCategories && (
+                                                    <Ionicons name="reload" size={18} color="#fff" style={{ marginRight: 6 }} />
+                                                )}
+                                                <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 16 }}>
+                                                    {savingCategories ? "Saving..." : "Save"}
+                                                </Text>
+                                            </TouchableOpacity>
+                                            <TouchableOpacity
+                                                style={{
+                                                    backgroundColor: "#eee",
+                                                    paddingVertical: 10,
+                                                    paddingHorizontal: 22,
+                                                    borderRadius: 8,
+                                                    alignItems: "center",
+                                                }}
+                                                onPress={() => setShowDropdown(false)}
+                                            >
+                                                <Text style={{ color: "#333", fontWeight: "bold", fontSize: 16 }}>
+                                                    Cancel
+                                                </Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                    </View>
+                                )}
+                            </View>
                         ))}
                     </View>
                 </ScrollView>

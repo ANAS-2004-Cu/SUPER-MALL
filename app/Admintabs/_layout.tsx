@@ -1,10 +1,22 @@
-import React from 'react';
-import { Tabs } from "expo-router";
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import * as NavigationBar from 'expo-navigation-bar';
+import { Tabs } from "expo-router";
+import React, { useEffect } from 'react';
+import { Platform } from 'react-native';
 
 export default function TabLayout() {
+  useEffect(() => {
+    async function hideNavigationBar() {
+      if (Platform.OS === 'android') {
+        await NavigationBar.setVisibilityAsync('hidden');
+        await NavigationBar.setButtonStyleAsync("light");
+      }
+    }
+    hideNavigationBar();
+  }, []);
+
   return (
     <Tabs
       screenOptions={{
@@ -21,6 +33,7 @@ export default function TabLayout() {
           shadowRadius: 5,
           elevation: 10,
           height: 53,
+          display: Platform.OS === 'android' ? 'none' : 'flex',
         },
         tabBarLabelStyle: {
           fontSize: 12,

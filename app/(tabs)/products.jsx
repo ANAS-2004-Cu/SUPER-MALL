@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from "react";
-import { AppState, Dimensions, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { AppState, Dimensions, FlatList, RefreshControl, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Icon from "react-native-vector-icons/Feather";
 import MiniAlert from '../../components/Component/MiniAlert';
 import ProductCard from '../../components/Component/ProductCard';
@@ -9,10 +9,7 @@ import { getCollection, onAuthStateChange } from '../../Firebase/Firebase';
 import FilterModal from '../../Modal/FilterModal';
 import { darkTheme, lightTheme } from '../../Theme/Tabs/ProductsTheme';
 
-const { width } = Dimensions.get('window');
-
 const ProductList = () => {
-  const router = useRouter();
   const params = useLocalSearchParams();
   const [searchQuery, setSearchQuery] = useState(params.searchTerm || '');
   const [products, setProducts] = useState([]);
@@ -27,6 +24,7 @@ const ProductList = () => {
   const [theme, setTheme] = useState(lightTheme);
   const [isFilterModalDarkMode, setIsFilterModalDarkMode] = useState(false);
   const [appState, setAppState] = useState(AppState.currentState);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // new states to support "section IDs" view
   const [sectionIds, setSectionIds] = useState([]); // array of ids (may come encoded)
@@ -41,7 +39,6 @@ const ProductList = () => {
   const [filtersApplied, setFiltersApplied] = useState(false);
   const defaultCategory = 'All';
   const defaultSort = 'name';
-  const defaultPriceRange = [0, maxPrice]; // maxPrice is state and may update after products load
 
   const applyDiscount = (price, discount = 0) => Math.floor(price - (price * discount) / 100);
 
@@ -62,6 +59,26 @@ const ProductList = () => {
       }
     } catch (error) {
       console.error("Failed to load theme:", error);
+    }
+  };
+
+  const refreshProducts = async () => {
+    setIsRefreshing(true);
+    try {
+      const result = await getCollection("products");
+      if (result.success) {
+        setProducts(result.data);
+        if (result.data.length > 0) {
+          const highestPrice = Math.max(...result.data.map(product => product.price));
+          const roundedPrice = Math.ceil(highestPrice / 100) * 100;
+          setMaxPrice(roundedPrice);
+          setPriceRange([0, roundedPrice]);
+        }
+        await fetchProductsManage();
+        await loadAvailableCategoriesFromStorage();
+      }
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -88,9 +105,6 @@ const ProductList = () => {
     getCollection("products").then(result => {
       if (result.success) {
         setProducts(result.data);
-        const uniqueCategories = ['All', ...new Set(result.data.map(product => product.category).filter(Boolean))];
-        setCategories(uniqueCategories);
-
         if (result.data.length > 0) {
           const highestPrice = Math.max(...result.data.map(product => product.price));
           const roundedPrice = Math.ceil(highestPrice / 100) * 100;
@@ -98,6 +112,8 @@ const ProductList = () => {
           setPriceRange([0, roundedPrice]);
         }
       }
+      fetchProductsManage();
+      loadAvailableCategoriesFromStorage();
     });
 
     return () => {
@@ -118,12 +134,10 @@ const ProductList = () => {
     }
   }, [params.category]);
 
-  // parse incoming section IDs and optional title (params.sectionIds expected to be encodeURIComponent(JSON.stringify([...ids])))
   useEffect(() => {
     if (params.sectionIds) {
       try {
         const raw = params.sectionIds;
-        // handle either encoded or plain JSON
         const decoded = typeof raw === 'string' ? decodeURIComponent(raw) : raw;
         const parsed = JSON.parse(decoded);
         if (Array.isArray(parsed)) {
@@ -149,21 +163,27 @@ const ProductList = () => {
     }
   }, [params.sectionIds, params.sectionTitle]);
 
-  // When filters are applied from the modal, close modal and mark filtersApplied
   const applyFilters = (filters) => {
+    if (filters.sectionIds && Array.isArray(filters.sectionIds)) {
+      setSectionIds(filters.sectionIds);
+      setSectionTitle(filters.sectionTitle || null);
+      setIsSectionView(true);
+      setFiltersApplied(true);
+      setIsFilterModalVisible(false);
+      return;
+    }
     setSelectedCategory(filters.category);
     setSortBy(filters.sortBy);
     setPriceRange(filters.priceRange);
     setFilterTopSelling(!!filters.topSelling);
     setFilterNewArrival(!!filters.newArrival);
     setIsFilterModalVisible(false);
-    setIsSectionView(false); // selecting filters should show filtered products rather than a section list
+    setIsSectionView(false);
     setSectionIds([]);
     setSectionTitle(null);
     setFiltersApplied(true);
   };
 
-  // Reset all filters and show full products list
   const resetFilters = () => {
     setSelectedCategory(defaultCategory);
     setSortBy(defaultSort);
@@ -178,7 +198,6 @@ const ProductList = () => {
     setFilterNewArrival(false);
   };
 
-  // Keep "filtersApplied" in sync if user changes selections directly (e.g. inside modal)
   useEffect(() => {
     const nonDefault =
       isSectionView ||
@@ -192,14 +211,75 @@ const ProductList = () => {
     setFiltersApplied(nonDefault);
   }, [isSectionView, selectedCategory, sortBy, priceRange, searchQuery, maxPrice, filterTopSelling, filterNewArrival]);
 
+  const fetchProductsManage = async () => {
+    try {
+      const response = await getCollection("ProductsManage");
+      if (response.success && Array.isArray(response.data) && response.data.length > 0) {
+        const doc = response.data[0];
+        const rawCats =
+          doc.AvilableCategory;
+        if (rawCats !== null) {
+          try {
+            await AsyncStorage.setItem('AvilableCategory', JSON.stringify(rawCats));
+          } catch (e) {
+            console.warn('Failed to save AvilableCategory to AsyncStorage', e);
+          }
+        }
+        setFilterTopSelling(Boolean(doc.TopSelling && doc.TopSelling.length > 0) ? filterTopSelling : filterTopSelling);
+      }
+    } catch (e) {
+    }
+  };
+
+  const loadAvailableCategoriesFromStorage = async () => {
+    try {
+      const raw = await AsyncStorage.getItem('AvilableCategory');
+      if (!raw) {
+        setCategories(['All']);
+        return;
+      }
+
+      let arr;
+      try {
+        arr = JSON.parse(raw);
+      } catch {
+        arr = [raw];
+      }
+
+      if (!Array.isArray(arr) || arr.length === 0) {
+        setCategories(['All']);
+        return;
+      }
+
+      const parsedNames = arr
+        .map((c, idx) => {
+          if (!c) return null;
+          if (typeof c === 'string') {
+            const stripped = c.replace(/^\s*\{?\s*/, '').replace(/\s*\}?\s*$/, '');
+            const [namePart] = stripped.split(',');
+            const name = (namePart || '').trim();
+            return name || null;
+          }
+          if (typeof c === 'object') {
+            const name = c.categoryname || c.categoryName || c.name || c.category || c.title || '';
+            return name || null;
+          }
+          return null;
+        })
+        .filter(Boolean);
+
+      const final = ['All', ...new Set(parsedNames)];
+      setCategories(final.length > 0 ? final : ['All']);
+    } catch {
+      setCategories(['All']);
+    }
+  };
+
   const getFilteredAndSortedProducts = () => {
-    // If top-selling or new-arrival filters are active, show those first (these override other filters)
     if (filterTopSelling || filterNewArrival) {
-      // top-selling: sort by sold desc
       const topList = filterTopSelling
         ? [...products].filter(p => (p.sold || 0) > 0).sort((a, b) => (b.sold || 0) - (a.sold || 0))
         : [];
-      // new-arrival: sort by createdAt desc (best-effort)
       const newList = filterNewArrival
         ? [...products].sort((a, b) => {
             const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -209,7 +289,6 @@ const ProductList = () => {
         : [];
       if (filterTopSelling && !filterNewArrival) return topList;
       if (filterNewArrival && !filterTopSelling) return newList;
-      // both: return union preserving topList order then append newList items not already included
       const seen = new Set();
       const union = [];
       topList.forEach(p => { if (!seen.has(String(p.id))) { seen.add(String(p.id)); union.push(p); }});
@@ -217,9 +296,7 @@ const ProductList = () => {
       return union;
     }
 
-    // If we were navigated here with a list of product IDs, return those products in the same order.
     if (isSectionView && sectionIds && sectionIds.length > 0) {
-      // preserve provided order; match by stringified ids
       return sectionIds
         .map(id => products.find(p => String(p.id) === String(id)))
         .filter(Boolean);
@@ -260,21 +337,10 @@ const ProductList = () => {
 
       <View style={styles(theme).header}>
         <Text style={styles(theme).heading}>
-          {sectionTitle ? `${sectionTitle} (${filteredProducts.length})` : `All Products (${filteredProducts.length})`}
+          {sectionTitle
+            ? `${sectionTitle} (${filteredProducts.length})`
+            : "All Products"}
         </Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          {filtersApplied && (
-            <TouchableOpacity style={styles(theme).resetButton} onPress={resetFilters}>
-              <Text style={styles(theme).resetText}>Reset</Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={styles(theme).filterButton}
-            onPress={() => setIsFilterModalVisible(true)}
-          >
-            <Icon name="sliders" size={20} color={theme.filterIconColor} />
-          </TouchableOpacity>
-        </View>
       </View>
 
       <View style={styles(theme).searchContainer}>
@@ -323,7 +389,29 @@ const ProductList = () => {
         contentContainerStyle={styles(theme).listContainer}
         numColumns={2}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={refreshProducts}
+            colors={['#1976D2']}
+          />
+        }
       />
+
+      <View style={styles(theme).floatingButtonsContainer}>
+        {filtersApplied && (
+          <TouchableOpacity style={styles(theme).floatingResetButton} onPress={resetFilters}>
+            <Icon name="rotate-ccw" size={22} color={theme.resetButtonTextColor || theme.headingColor} />
+            <Text style={styles(theme).floatingResetText}>Reset</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity
+          style={styles(theme).floatingFilterButton}
+          onPress={() => setIsFilterModalVisible(true)}
+        >
+          <Icon name="sliders" size={24} color={theme.filterIconColor} />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };
@@ -399,6 +487,65 @@ const styles = (theme) => StyleSheet.create({
   resetText: {
     color: theme.resetButtonTextColor || theme.headingColor,
     fontWeight: '600',
+  },
+  floatingButtonsContainer: {
+    position: 'absolute',
+    bottom: 24,
+    right: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    zIndex: 100,
+  },
+  floatingFilterButton: {
+    backgroundColor: theme.filterButtonBackground,
+    borderRadius: 28,
+    padding: 16,
+    elevation: 6,
+    shadowColor: '#222',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    marginLeft: 8,
+    borderWidth: 1,
+    borderColor: theme.filterButtonBorderColor,
+  },
+  floatingRefreshButton: {
+    backgroundColor: '#fff',
+    borderRadius: 28,
+    padding: 12,
+    elevation: 6,
+    shadowColor: '#1976D2',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    marginLeft: 8,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#1976D2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  floatingResetButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E53935',
+    borderRadius: 22,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    elevation: 6,
+    shadowColor: '#E53935',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    borderWidth: 0,
+    marginRight: 8,
+  },
+  floatingResetText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
+    marginLeft: 8,
+    letterSpacing: 0.5,
   },
 });
 

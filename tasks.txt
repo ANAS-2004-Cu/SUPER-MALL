@@ -1,5 +1,5 @@
 
-preferredCategories --> settings
+preferredCategories --> settings --------------------
 
 catigory from home --> products ---------------------
 
@@ -11,7 +11,7 @@ top edge --> all app
 
 top selling --> home --> products in firebase ------------
 
-new arrival --> home --> products in firebase
+new arrival --> home --> products in firebase ------------
 
 no discount --> product card
 

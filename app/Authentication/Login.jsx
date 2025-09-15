@@ -5,7 +5,7 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Dimensions, Linking, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import MiniAlert from '../../components/Component/MiniAlert';
-import { getUserData, signIn } from '../../Firebase/Firebase';
+import { getCollection, getUserData, signIn } from '../../Firebase/Firebase';
 import { darkTheme, lightTheme } from '../../Theme/Auth/LoginTheme';
 
 const Login = () => {
@@ -53,6 +53,27 @@ const Login = () => {
     }, 3000);
   };
 
+  const syncCategoriesAndAvailableCategory = async (userData) => {
+    // Sync preferred categories
+    if (userData?.preferredCategories && userData.preferredCategories.length > 0) {
+      await AsyncStorage.setItem('categories', JSON.stringify(userData.preferredCategories));
+    }
+    // Sync AvilableCategory from ProductsManage collection
+    try {
+      const response = await getCollection("ProductsManage");
+      if (response.success && Array.isArray(response.data) && response.data.length > 0) {
+        const doc = response.data[0];
+        const rawCats =
+          doc.AvilableCategory ;
+        if (rawCats !== null) {
+          await AsyncStorage.setItem('AvilableCategory', JSON.stringify(rawCats));
+        }
+      }
+    } catch (e) {
+      // ignore errors
+    }
+  };
+
   const signin = async () => {
     setError('');
     if (!email || !password) {
@@ -71,6 +92,8 @@ const Login = () => {
 
         if (userData) {
           await AsyncStorage.setItem('UserObject', JSON.stringify(userData));
+          // --- Sync categories and AvilableCategory after login ---
+          await syncCategoriesAndAvailableCategory(userData);
 
           if (userData?.isAdmin === true) {
             router.replace('./Admintabs');
