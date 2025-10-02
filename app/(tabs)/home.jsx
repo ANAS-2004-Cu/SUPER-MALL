@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, AppState, FlatList, Image, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, AppState, Dimensions, FlatList, Image, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import Icon from "react-native-vector-icons/Feather";
 import MiniAlert from '../../components/Component/MiniAlert';
 import ProductCard from '../../components/Component/ProductCard';
@@ -41,6 +41,11 @@ const HomePage = () => {
   const [theme, setTheme] = useState(lightTheme);
   const [appState, setAppState] = useState(AppState.currentState);
   const [availableCategories, setAvailableCategories] = useState(Categories);
+  const [adBanners, setAdBanners] = useState([]);
+  const bannerRef = useRef(null);
+  const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
+  const windowWidth = Dimensions.get('window').width;
+  const dimensions = useWindowDimensions();
 
   const checkTheme = async () => {
     try {
@@ -79,6 +84,21 @@ const HomePage = () => {
       setAlertMsg(null);
       setLoad(false);
     }, 3000);
+  };
+
+  // Add: check login before navigating to Cart
+  const handleCartPress = async () => {
+    try {
+      const userJson = await AsyncStorage.getItem('UserObject');
+      const isLoggedIn = !!auth.currentUser || (!!userJson && userJson !== "undefined");
+      if (!isLoggedIn) {
+        showAlert("Please login to access your cart", 'error');
+        return;
+      }
+      router.push("/cart");
+    } catch {
+      showAlert("Please login to access your cart", 'error');
+    }
   };
 
   const storeCategories = async () => {
@@ -252,6 +272,14 @@ const HomePage = () => {
         const doc = response.data[0];
         setTopSellingIds(Array.isArray(doc.TopSelling) ? doc.TopSelling : []);
         setNewArrivalIds(Array.isArray(doc.NewArrival) ? doc.NewArrival : []);
+        
+        // Add this code to fetch ad banners
+        if (Array.isArray(doc.Ad)) {
+          setAdBanners(doc.Ad);
+          // Reset current banner index when banners are loaded
+          setCurrentBannerIndex(0);
+        }
+        
         // store the raw AvilableCategory (if present) to AsyncStorage so loadAvailableCategoriesFromStorage reads it
         const rawCats =
           doc.AvilableCategory;
@@ -366,6 +394,75 @@ const HomePage = () => {
     setShowSuggestions(false);
   };
 
+  const handleBannerPress = (item) => {
+    if (!item) return;
+    
+    // Check the action type and navigate accordingly
+    switch (item.action) {
+      case "navigate":
+        if (item.id) {
+          router.push({
+            pathname: "../singlepage",
+            params: { id: item.id }
+          });
+        }
+        break;
+        
+      case "search":
+        if (item.SearchKey) {
+          router.push({
+            pathname: "/(tabs)/products",
+            params: { searchTerm: item.SearchKey }
+          });
+        }
+        break;
+        
+      case "offer":
+      default:
+        // Default behavior - go to ad detail page
+        const imgParam = item && item.img ? encodeURIComponent(item.img) : "";
+        const contentParam = item && item.content ? encodeURIComponent(item.content) : "";
+        
+        router.push({
+          pathname: "../Pages/ad-detail",
+          params: { 
+            image: imgParam,
+            content: contentParam
+          }
+        });
+        break;
+    }
+  };
+
+  // Auto-scroll banner effect
+  useEffect(() => {
+    if (!adBanners || adBanners.length <= 1) return;
+    
+    const bannerInterval = setInterval(() => {
+      if (bannerRef.current) {
+        let nextIndex = (currentBannerIndex + 1) % adBanners.length;
+        setCurrentBannerIndex(nextIndex);
+        
+        bannerRef.current.scrollToIndex({
+          index: nextIndex,
+          animated: true,
+          viewPosition: 0
+        });
+      }
+    }, 3000); // Change banner every 3 seconds
+    
+    return () => clearInterval(bannerInterval);
+  }, [adBanners, currentBannerIndex]);
+
+  // Handle scroll end to update current index
+  const handleBannerScroll = useCallback((event) => {
+    if (!adBanners || adBanners.length <= 1) return;
+    
+    const contentOffset = event.nativeEvent.contentOffset.x;
+    const index = Math.round(contentOffset / (windowWidth - 40));
+    setCurrentBannerIndex(index);
+  }, [adBanners, windowWidth]);
+
   if (error) {
     return (
       <View style={[styles.errorContainer, { backgroundColor: theme.background }]}>
@@ -403,7 +500,7 @@ const HomePage = () => {
       >
         <View style={styles.header}>
           <View style={{ flex: 1 }}></View>
-          <TouchableOpacity onPress={() => router.push("/cart")}>
+          <TouchableOpacity onPress={handleCartPress}>
             <View style={[styles.headerIconContainer, { backgroundColor: theme.headerIconBackground }]}>
               <Icon name="shopping-cart" size={20} color={theme.headerIconColor} />
             </View>
@@ -503,12 +600,69 @@ const HomePage = () => {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.listContainer}
         />
-        <View style={styles.imageContainer}>
-          <Image
-            source={{ uri: 'https://b.top4top.io/p_34113iqov1.png' }}
-            style={styles.bannerimage}
-            resizeMode="contain"
-          />
+        <View style={styles.adBannerContainer}>
+          {adBanners.length > 0 ? (
+            <>
+              <FlatList
+                ref={bannerRef}
+                data={adBanners}
+                keyExtractor={(item, index) => `ad-banner-${index}`}
+                renderItem={({ item }) => (
+                  <TouchableOpacity 
+                    onPress={() => handleBannerPress(item)} 
+                    style={[
+                      styles.adBannerItemContainer, 
+                      { width: dimensions.width - 40 }
+                    ]}
+                    activeOpacity={0.9}
+                  >
+                    <Image
+                      source={{ uri: item.img }}
+                      style={styles.adBannerImage}
+                      resizeMode="contain" // Changed to "contain" to ensure full width is visible
+                      defaultSource={require('../../assets/images/loading-buffering.gif')}
+                    />
+                  </TouchableOpacity>
+                )}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                pagingEnabled
+                onMomentumScrollEnd={handleBannerScroll}
+                snapToAlignment="center"
+                snapToInterval={dimensions.width - 40}
+                decelerationRate="fast"
+                contentContainerStyle={styles.adBannerContentContainer}
+                onScrollToIndexFailed={(info) => {
+                  const wait = new Promise(resolve => setTimeout(resolve, 500));
+                  wait.then(() => {
+                    if (bannerRef.current) {
+                      bannerRef.current.scrollToIndex({ 
+                        index: info.index, 
+                        animated: true 
+                      });
+                    }
+                  });
+                }}
+              />
+              <View style={styles.paginationContainer}>
+                {adBanners.map((_, index) => (
+                  <View
+                    key={index}
+                    style={[
+                      styles.paginationDot,
+                      { backgroundColor: index === currentBannerIndex ? theme.accentColor : theme.paginationInactive || '#ccc' }
+                    ]}
+                  />
+                ))}
+              </View>
+            </>
+          ) : (
+            <Image
+              source={{ uri: 'https://b.top4top.io/p_34113iqov1.png' }}
+              style={styles.bannerimage}
+              resizeMode="contain"
+            />
+          )}
         </View>
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>Top Selling</Text>
@@ -614,7 +768,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: 20,
-    paddingTop: 20,
+    paddingTop: 30,
   },
   header: {
     flexDirection: "row",
@@ -725,13 +879,42 @@ const styles = StyleSheet.create({
   },
   bannerimage: {
     width: '100%',
-    height: 120,
+    height: undefined,
+    aspectRatio: 2.5, // Default fallback aspect ratio if no banner images
     resizeMode: 'contain',
     borderRadius: 10,
   },
-  imageContainer: {
+  adBannerContainer: {
     width: '100%',
     marginBottom: 20,
+  },
+  adBannerItemContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    overflow: 'visible', // Changed from 'hidden' to 'visible' to ensure full width is shown
+    paddingHorizontal: 0, // Remove horizontal padding
+  },
+  adBannerImage: {
+    width: '100%',
+    height: undefined,
+    aspectRatio: 2.5, // Default aspect ratio
+    borderRadius: 10,
+  },
+  adBannerContentContainer: {
+    paddingBottom: 10,
+  },
+  paginationContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  paginationDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginHorizontal: 4,
   },
   loadingContainer: {
     height: 200,

@@ -8,8 +8,9 @@ import {
     Switch,
     Text,
     TouchableOpacity,
-    View
+    View,
 } from "react-native";
+import MiniAlert from "../../components/Component/MiniAlert";
 import { auth, getUserData, updateDocument } from "../../Firebase/Firebase";
 import { darkTheme, lightTheme } from "../../Theme/ProfileTabs/SettingsTheme";
 
@@ -70,6 +71,12 @@ const Settings = () => {
     const [availableCategories, setAvailableCategories] = useState<Category[]>([]);
     const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
     const [savingCategories, setSavingCategories] = useState<boolean>(false);
+    const [alertMsg, setAlertMsg] = useState<string | null>(null);
+    const [alertType, setAlertType] = useState<'success' | 'error'>('error');
+    const showAlert = (message: string, type: 'success' | 'error' = 'error') => {
+        setAlertMsg(message);
+        setAlertType(type);
+    };
 
     const loadThemeMode = async () => {
         try {
@@ -138,6 +145,19 @@ const Settings = () => {
     };
 
     const openCategoryDropdown = async () => {
+        // Check login state before opening dropdown
+        try {
+            const userJson = await AsyncStorage.getItem('UserObject');
+            const isLoggedIn = !!auth.currentUser || (!!userJson && userJson !== "undefined");
+            if (!isLoggedIn) {
+                showAlert("Please login to choose preferred categories.", 'error');
+                return;
+            }
+        } catch {
+            showAlert("Please login to choose preferred categories.", 'error');
+            return;
+        }
+
         await loadAvailableCategories();
         await loadUserPreferredCategories();
         setShowDropdown((prev: boolean) => !prev);
@@ -227,8 +247,15 @@ const Settings = () => {
 
     return (
         <>
-            <Stack.Screen name="settings" options={{ headerShown: false }} />
+            <Stack.Screen options={{ headerShown: false }} />
             <LinearGradient colors={theme.colors.gradient  as [string, string, ...string[]]} style={theme.styles.container}>
+                {alertMsg && (
+                    <MiniAlert
+                        message={alertMsg}
+                        type={alertType}
+                        onHide={() => setAlertMsg(null)}
+                    />
+                )}
                 <View style={theme.styles.header}>
                     <TouchableOpacity
                         style={theme.styles.backButton}

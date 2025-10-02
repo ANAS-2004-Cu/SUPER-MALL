@@ -68,7 +68,7 @@ const Profile = () => {
         setUserData(null);
         setIsLoggedIn(false);
         showAlert("Successfully signed out", 'success');
-        router.push("../Authentication/Login");
+        router.replace("/Authentication/Login");
       } else {
         showAlert(result.error || "Failed to sign out", 'error');
       }
@@ -115,7 +115,7 @@ const Profile = () => {
         </View>
         <TouchableOpacity
           style={styles.edit}
-          onPress={() => handleAuthenticatedAction(() => router.push("../(ProfileTabs)/editprofile"))}
+          onPress={() => handleAuthenticatedAction(() => router.push("/editprofile"))}
           activeOpacity={0.4}
         >
           <Text style={[styles.edittext, theme.edittext]}>Edit</Text>
@@ -124,7 +124,7 @@ const Profile = () => {
 
       <TouchableOpacity
         style={[styles.profiletabs, theme.profiletabs]}
-        onPress={() => handleAuthenticatedAction(() => router.push("../(ProfileTabs)/orders"))}
+        onPress={() => handleAuthenticatedAction(() => router.push("/orders"))}
         activeOpacity={0.6}
       >
         <Text style={[styles.textb, theme.name]}>Orders</Text>
@@ -133,7 +133,7 @@ const Profile = () => {
 
       <TouchableOpacity
         style={[styles.profiletabs, theme.profiletabs]}
-        onPress={() => handleAuthenticatedAction(() => router.push("../(ProfileTabs)/address"))}
+        onPress={() => handleAuthenticatedAction(() => router.push("/address"))}
         activeOpacity={0.6}
       >
         <Text style={[styles.textb, theme.name]}>Address</Text>
@@ -142,7 +142,7 @@ const Profile = () => {
 
       <TouchableOpacity
         style={[styles.profiletabs, theme.profiletabs]}
-        onPress={() => handleAuthenticatedAction(() => router.push("../(ProfileTabs)/Wishlist"))}
+        onPress={() => handleAuthenticatedAction(() => router.push("/Wishlist"))}
         activeOpacity={0.6}
       >
         <Text style={[styles.textb, theme.name]}>Wishlist</Text>
@@ -151,7 +151,7 @@ const Profile = () => {
 
       <TouchableOpacity
         style={[styles.profiletabs, theme.profiletabs]}
-        onPress={() => router.push("../(ProfileTabs)/help")}
+        onPress={() => router.push("/help")}
         activeOpacity={0.6}
       >
         <Text style={[styles.textb, theme.name]}>Help & Support</Text>
@@ -160,7 +160,7 @@ const Profile = () => {
 
       <TouchableOpacity
         style={[styles.profiletabs, theme.profiletabs]}
-        onPress={() => router.push("../(ProfileTabs)/About")}
+        onPress={() => router.push("/About")}
         activeOpacity={0.6}
       >
         <Text style={[styles.textb, theme.name]}>About</Text>
@@ -169,7 +169,7 @@ const Profile = () => {
 
       <TouchableOpacity
         style={[styles.profiletabs, theme.profiletabs]}
-        onPress={() => router.push("../(ProfileTabs)/Settings")}
+        onPress={() => router.push("/Settings")}
         activeOpacity={0.6}
       >
         <Text style={[styles.textb, theme.name]}>Settings</Text>

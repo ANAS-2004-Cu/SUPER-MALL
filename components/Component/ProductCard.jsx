@@ -23,6 +23,9 @@ const ProductCard = ({
   const [cartItems, setCartItems] = useState([]);
   const [favorites, setFavorites] = useState([]);
   
+  // Check if item is in stock
+  const isInStock = item.stockQuantity === undefined || item.stockQuantity > 0;
+  
   // Update theme whenever customTheme prop changes
   useEffect(() => {
     if (customTheme) {
@@ -133,11 +136,21 @@ const ProductCard = ({
       return onShowAlert('Please sign in to add products to your shopping cart', 'error');
     }
 
+    // Prevent adding out-of-stock items to cart
+    if (!isInStock) {
+      return onShowAlert('This item is currently out of stock', 'error');
+    }
+
     try {
       const cartResult = await getCollection(`Users/${currentUser.uid}/cart`);
       const existingItem = cartResult.success ? cartResult.data.find(cartItem => cartItem.productId === item.id) : null;
 
       if (existingItem) {
+        // Check if adding one more would exceed stock quantity
+        if (item.stockQuantity !== undefined && existingItem.quantity + 1 > item.stockQuantity) {
+          return onShowAlert(`Sorry, only ${item.stockQuantity} items available in stock`, 'error');
+        }
+        
         await updateDocument(`Users/${currentUser.uid}/cart`, existingItem.id, {
           quantity: existingItem.quantity + 1,
           updatedAt: new Date(),
@@ -170,6 +183,11 @@ const ProductCard = ({
     try {
       const cartItem = cartItems.find(cartItem => cartItem.productId === item.id);
       if (!cartItem) return;
+
+      // Check if the new quantity would exceed stock
+      if (item.stockQuantity !== undefined && newQuantity > item.stockQuantity) {
+        return onShowAlert(`Sorry, only ${item.stockQuantity} items available in stock`, 'error');
+      }
 
       if (newQuantity <= 0) {
         await deleteDocument(`Users/${currentUser.uid}/cart`, cartItem.id);
@@ -227,6 +245,15 @@ const ProductCard = ({
   const renderCartButton = () => {
     const quantity = getCartQuantity(item.id);
 
+    // If out of stock, show out of stock message
+    if (!isInStock) {
+      return (
+        <View style={styles(theme).bottomButtonContainer}>
+          <Text style={styles(theme).outOfStockText}>Out of Stock</Text>
+        </View>
+      );
+    }
+
     if (quantity > 0) {
       return (
         <View style={styles(theme).bottomButtonContainer}>
@@ -263,7 +290,7 @@ const ProductCard = ({
 
   // Price display with discount
   const renderPriceDisplay = () => {
-    const hasDiscount = item.discount && item.discount > 0;
+    const hasDiscount = item.discount !== undefined && Number(item.discount) > 0;
     const discountedPrice = applyDiscount(item.price, item.discount);
     
     return (
@@ -287,12 +314,45 @@ const ProductCard = ({
     );
   };
 
+  // Stock display
+  const renderStockInfo = () => {
+    if (item.stockQuantity !== undefined) {
+      const isLowStock = isInStock && item.stockQuantity <= 5;
+      
+      // Only show stock info if it's low stock or out of stock
+      if (isLowStock || !isInStock) {
+        return (
+          <View style={[
+            styles(theme).stockContainer,
+            { backgroundColor: theme.stockContainerBackground }
+          ]}>
+            <Text style={[
+              styles(theme).stockText,
+              isInStock 
+                ? { color: theme.lowStockColor, fontWeight: 'bold' }
+                : styles(theme).outOfStockText
+            ]}>
+              {isInStock 
+                ? `Only ${item.stockQuantity} left!` 
+                : 'Out of Stock'
+              }
+            </Text>
+          </View>
+        );
+      }
+    }
+    return null;
+  };
+
   return (
     <TouchableOpacity 
       style={styles(theme).cardTouchable}
       onPress={() => router.push({ pathname: "/singlepage", params: { id: item.id } })}
     >
-      <View style={styles(theme).card}>
+      <View style={[
+        styles(theme).card,
+        !isInStock && styles(theme).outOfStockCard
+      ]}>
         <TouchableOpacity
           style={styles(theme).favoriteButton}
           onPress={(e) => {
@@ -308,27 +368,40 @@ const ProductCard = ({
           />
         </TouchableOpacity>
 
-        {item.discount > 0 && (
+        {item.discount !== undefined && Number(item.discount) > 0 && (
           <View style={styles(theme).discountBadgeCorner}>
             <Text style={styles(theme).discountBadgeText}>-{item.discount}%</Text>
+          </View>
+        )}
+
+        {!isInStock && (
+          <View style={styles(theme).outOfStockOverlay}>
+            <Text style={styles(theme).outOfStockOverlayText}>Out of Stock</Text>
           </View>
         )}
 
         <Image source={{ uri: item.image }} style={styles(theme).image} />
         <View style={styles(theme).textContainer}>
           <Text style={styles(theme).title} numberOfLines={2} ellipsizeMode="tail">{item.name}</Text>
+          {renderStockInfo()}
           {renderPriceDisplay()}
         </View>
         
         <TouchableOpacity 
-          style={styles(theme).fullWidthButton}
+          style={[
+            styles(theme).fullWidthButton,
+            !isInStock && styles(theme).disabledButton
+          ]}
           onPress={(e) => {
             e.stopPropagation();
-            const quantity = getCartQuantity(item.id);
-            if (quantity === 0) {
-              handleAddToCart();
+            if (isInStock) {
+              const quantity = getCartQuantity(item.id);
+              if (quantity === 0) {
+                handleAddToCart();
+              }
             }
           }}
+          disabled={!isInStock}
         >
           {renderCartButton()}
         </TouchableOpacity>
@@ -485,6 +558,53 @@ const styles = (theme) => StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginHorizontal: 10,
+  },
+  outOfStockCard: {
+    opacity: 0.8,
+    borderColor: theme.outOfStockBorderColor || '#999',
+  },
+  outOfStockOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    zIndex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 12,
+  },
+  outOfStockOverlayText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 5,
+    transform: [{ rotate: '-15deg' }],
+  },
+  disabledButton: {
+    backgroundColor: theme.disabledButtonBackground || '#ccc',
+  },
+  stockContainer: {
+    width: '100%',
+    marginBottom: 6,
+    alignItems: 'center',
+    padding: 3,
+    borderRadius: 4,
+  },
+  stockText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  inStockText: {
+    color: theme.inStockColor || '#00a65a',
+  },
+  outOfStockText: {
+    color: theme.outOfStockColor || '#d9534f',
+    fontWeight: 'bold',
   },
 });
 

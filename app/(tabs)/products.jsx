@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from "react";
-import { AppState, Dimensions, FlatList, RefreshControl, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { AppState, FlatList, RefreshControl, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Icon from "react-native-vector-icons/Feather";
 import MiniAlert from '../../components/Component/MiniAlert';
 import ProductCard from '../../components/Component/ProductCard';
@@ -40,6 +40,10 @@ const ProductList = () => {
   const defaultCategory = 'All';
   const defaultSort = 'name';
 
+  // client-side pagination state
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
+
   const applyDiscount = (price, discount = 0) => Math.floor(price - (price * discount) / 100);
 
   const showAlert = (message, type = 'success') => {
@@ -50,11 +54,34 @@ const ProductList = () => {
   const checkTheme = async () => {
     try {
       const themeMode = await AsyncStorage.getItem("ThemeMode");
+      // Import stock styling properties from ProductCardTheme
+      const { darkTheme: cardDarkTheme, lightTheme: cardLightTheme } = require('../../Theme/Component/ProductCardTheme');
+      
       if (themeMode === "2") {
-        setTheme(darkTheme);
+        // Merge ProductsTheme with ProductCardTheme to ensure stock styling is available
+        setTheme({
+          ...darkTheme,
+          // Stock colors from ProductCardTheme
+          inStockColor: cardDarkTheme.inStockColor,
+          lowStockColor: cardDarkTheme.lowStockColor,
+          outOfStockColor: cardDarkTheme.outOfStockColor,
+          outOfStockBorderColor: cardDarkTheme.outOfStockBorderColor,
+          disabledButtonBackground: cardDarkTheme.disabledButtonBackground,
+          stockContainerBackground: cardDarkTheme.stockContainerBackground
+        });
         setIsFilterModalDarkMode(true);
       } else {
-        setTheme(lightTheme);
+        // Merge ProductsTheme with ProductCardTheme to ensure stock styling is available
+        setTheme({
+          ...lightTheme,
+          // Stock colors from ProductCardTheme
+          inStockColor: cardLightTheme.inStockColor,
+          lowStockColor: cardLightTheme.lowStockColor,
+          outOfStockColor: cardLightTheme.outOfStockColor,
+          outOfStockBorderColor: cardLightTheme.outOfStockBorderColor,
+          disabledButtonBackground: cardLightTheme.disabledButtonBackground,
+          stockContainerBackground: cardLightTheme.stockContainerBackground
+        });
         setIsFilterModalDarkMode(false);
       }
     } catch (error) {
@@ -65,6 +92,8 @@ const ProductList = () => {
   const refreshProducts = async () => {
     setIsRefreshing(true);
     try {
+      // reset pagination on manual refresh
+      setPage(1);
       const result = await getCollection("products");
       if (result.success) {
         setProducts(result.data);
@@ -164,10 +193,15 @@ const ProductList = () => {
   }, [params.sectionIds, params.sectionTitle]);
 
   const applyFilters = (filters) => {
+    // reset pagination whenever filters applied
+    setPage(1);
     if (filters.sectionIds && Array.isArray(filters.sectionIds)) {
       setSectionIds(filters.sectionIds);
       setSectionTitle(filters.sectionTitle || null);
       setIsSectionView(true);
+      // clear boolean flags when applying curated sections
+      setFilterTopSelling(false);
+      setFilterNewArrival(false);
       setFiltersApplied(true);
       setIsFilterModalVisible(false);
       return;
@@ -196,6 +230,7 @@ const ProductList = () => {
     setIsFilterModalVisible(false);
     setFilterTopSelling(false);
     setFilterNewArrival(false);
+    setPage(1);
   };
 
   useEffect(() => {
@@ -210,6 +245,20 @@ const ProductList = () => {
       filterNewArrival;
     setFiltersApplied(nonDefault);
   }, [isSectionView, selectedCategory, sortBy, priceRange, searchQuery, maxPrice, filterTopSelling, filterNewArrival]);
+
+  useEffect(() => {
+    // auto reset pagination when any filtering criterion changes
+    setPage(1);
+  }, [
+    searchQuery,
+    selectedCategory,
+    sortBy,
+    priceRange,
+    isSectionView,
+    sectionIds,
+    filterTopSelling,
+    filterNewArrival
+  ]);
 
   const fetchProductsManage = async () => {
     try {
@@ -276,33 +325,68 @@ const ProductList = () => {
   };
 
   const getFilteredAndSortedProducts = () => {
-    if (filterTopSelling || filterNewArrival) {
-      const topList = filterTopSelling
-        ? [...products].filter(p => (p.sold || 0) > 0).sort((a, b) => (b.sold || 0) - (a.sold || 0))
-        : [];
-      const newList = filterNewArrival
-        ? [...products].sort((a, b) => {
-            const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-            const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-            return tb - ta;
-          })
-        : [];
-      if (filterTopSelling && !filterNewArrival) return topList;
-      if (filterNewArrival && !filterTopSelling) return newList;
-      const seen = new Set();
-      const union = [];
-      topList.forEach(p => { if (!seen.has(String(p.id))) { seen.add(String(p.id)); union.push(p); }});
-      newList.forEach(p => { if (!seen.has(String(p.id))) { seen.add(String(p.id)); union.push(p); }});
-      return union;
-    }
+    // Curated section view: authoritative even if empty
+    if (isSectionView) {
+      // If curated list is empty, do not fallback to all products
+      if (!sectionIds || sectionIds.length === 0) {
+        return [];
+      }
 
-    if (isSectionView && sectionIds && sectionIds.length > 0) {
-      return sectionIds
+      const list = sectionIds
         .map(id => products.find(p => String(p.id) === String(id)))
         .filter(Boolean);
+
+      const base = list.filter(item => {
+        const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesCategory = selectedCategory === 'All' || item.category === selectedCategory;
+        const price = applyDiscount(item.price, item.discount);
+        const matchesPrice = price >= priceRange[0] && price <= priceRange[1];
+        return matchesSearch && matchesCategory && matchesPrice;
+      });
+
+      const getTime = (val) => {
+        if (!val) return 0;
+        if (typeof val === 'number') return val;
+        if (typeof val === 'string') {
+          const t = Date.parse(val);
+          return isNaN(t) ? 0 : t;
+        }
+        if (typeof val === 'object') {
+          if (typeof val.toDate === 'function') {
+            try { return val.toDate().getTime(); } catch { return 0; }
+          }
+          if (typeof val.seconds === 'number') {
+            const baseMs = val.seconds * 1000;
+            return baseMs + (val.nanoseconds ? Math.floor(val.nanoseconds / 1e6) : 0);
+          }
+        }
+        return 0;
+      };
+
+      const title = (sectionTitle || '').toLowerCase();
+      if (title.includes('top selling')) {
+        return [...base].sort((a, b) => (b.sold || 0) - (a.sold || 0));
+      }
+      if (title.includes('new arrival')) {
+        return [...base].sort((a, b) => getTime(b.createdAt) - getTime(a.createdAt));
+      }
+
+      // fallback to normal sort when curated title is generic
+      return [...base].sort((a, b) => {
+        switch (sortBy) {
+          case 'priceLow':
+            return applyDiscount(a.price, a.discount) - applyDiscount(b.price, b.discount);
+          case 'priceHigh':
+            return applyDiscount(b.price, b.discount) - applyDiscount(a.price, a.discount);
+          case 'name':
+          default:
+            return a.name.localeCompare(b.name);
+        }
+      });
     }
 
-    let filtered = products.filter(item => {
+    // 2) Build base list with category/search/price first
+    const base = products.filter(item => {
       const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesCategory = selectedCategory === 'All' || item.category === selectedCategory;
       const price = applyDiscount(item.price, item.discount);
@@ -310,7 +394,47 @@ const ProductList = () => {
       return matchesSearch && matchesCategory && matchesPrice;
     });
 
-    return filtered.sort((a, b) => {
+    // 3) Apply Top Selling / New Arrival on the base list (if toggled)
+    if (filterTopSelling || filterNewArrival) {
+      const topList = filterTopSelling
+        ? [...base].filter(p => (p.sold || 0) > 0).sort((a, b) => (b.sold || 0) - (a.sold || 0))
+        : [];
+
+      const getTime = (val) => {
+        if (!val) return 0;
+        if (typeof val === 'number') return val;
+        if (typeof val === 'string') {
+          const t = Date.parse(val);
+          return isNaN(t) ? 0 : t;
+        }
+        if (typeof val === 'object') {
+          if (typeof val.toDate === 'function') {
+            try { return val.toDate().getTime(); } catch { return 0; }
+          }
+          if (typeof val.seconds === 'number') {
+            const baseMs = val.seconds * 1000;
+            return baseMs + (val.nanoseconds ? Math.floor(val.nanoseconds / 1e6) : 0);
+          }
+        }
+        return 0;
+      };
+
+      const newList = filterNewArrival
+        ? [...base].sort((a, b) => getTime(b.createdAt) - getTime(a.createdAt))
+        : [];
+
+      if (filterTopSelling && !filterNewArrival) return topList;
+      if (filterNewArrival && !filterTopSelling) return newList;
+
+      const seen = new Set();
+      const union = [];
+      topList.forEach(p => { const id = String(p.id); if (!seen.has(id)) { seen.add(id); union.push(p); }});
+      newList.forEach(p => { const id = String(p.id); if (!seen.has(id)) { seen.add(id); union.push(p); }});
+      return union;
+    }
+
+    // 4) Default sorting for normal mode
+    return [...base].sort((a, b) => {
       switch (sortBy) {
         case 'priceLow':
           return applyDiscount(a.price, a.discount) - applyDiscount(b.price, b.discount);
@@ -324,6 +448,16 @@ const ProductList = () => {
   };
 
   const filteredProducts = getFilteredAndSortedProducts();
+
+  // derive paginated subset and "has more" flag
+  const paginatedProducts = filteredProducts.slice(0, page * pageSize);
+  const hasMore = paginatedProducts.length < filteredProducts.length;
+
+  const handleLoadMore = () => {
+    if (hasMore && !isRefreshing) {
+      setPage(prev => prev + 1);
+    }
+  };
 
   return (
     <View style={styles(theme).container}>
@@ -376,7 +510,7 @@ const ProductList = () => {
       />
 
       <FlatList
-        data={filteredProducts}
+        data={paginatedProducts}
         keyExtractor={item => item.id}
         renderItem={({ item }) => (
           <ProductCard
@@ -395,6 +529,15 @@ const ProductList = () => {
             onRefresh={refreshProducts}
             colors={['#1976D2']}
           />
+        }
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.4}
+        ListFooterComponent={
+          !hasMore ? (
+            <View style={{ paddingVertical: 12 }}>
+              <Text style={{ textAlign: 'center', color: theme.searchInputPlaceholderColor }}>No more products</Text>
+            </View>
+          ) : null
         }
       />
 
@@ -419,7 +562,7 @@ const ProductList = () => {
 const styles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: 20,
+    paddingTop: 30,
     backgroundColor: theme.backgroundColor,
   },
   header: {

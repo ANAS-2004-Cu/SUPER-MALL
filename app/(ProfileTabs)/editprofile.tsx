@@ -258,7 +258,7 @@ const EditProfile = () => {
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
       <View style={{ flex: 1 }}>
-        <Stack.Screen name="address" options={{ headerShown: false }} />
+        <Stack.Screen options={{ headerShown: false }} />
 
         {alertMessage && (
           <MiniAlert

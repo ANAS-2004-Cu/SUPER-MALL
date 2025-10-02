@@ -26,6 +26,14 @@ const lightTheme = {
   // Shadows and elevations
   cardShadowColor: '#000',
   cardBorderColor: '#ddd',
+  
+  // Stock colors
+  inStockColor: '#00cc44',
+  lowStockColor: '#ff9500',
+  outOfStockColor: '#ff3b30',
+  outOfStockBorderColor: '#ff7b7b',
+  disabledButtonBackground: '#cccccc',
+  stockContainerBackground: 'rgba(240, 240, 240, 0.7)',
 };
 
 const darkTheme = {
@@ -56,6 +64,14 @@ const darkTheme = {
   // Shadows and elevations
   cardShadowColor: '#000',
   cardBorderColor: '#444',
+  
+  // Stock colors
+  inStockColor: '#32d74b',
+  lowStockColor: '#ff9f0a',
+  outOfStockColor: '#ff453a',
+  outOfStockBorderColor: '#ff5252',
+  disabledButtonBackground: '#555555',
+  stockContainerBackground: 'rgba(50, 50, 50, 0.7)',
 };
 
 export { darkTheme, lightTheme };

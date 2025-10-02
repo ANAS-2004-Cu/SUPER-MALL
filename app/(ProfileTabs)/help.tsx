@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import MiniAlert from '../../components/Component/MiniAlert';
 import { darkTheme, lightTheme } from '../../Theme/ProfileTabs/HelpTheme';
 
 interface HelpTopicItemProps {
@@ -47,6 +48,12 @@ const HelpTopicItem: React.FC<HelpTopicItemProps> = ({ icon, title, subtitle, ac
 
 const Help = () => {
   const [theme, setTheme] = useState(lightTheme);
+  const [alertMsg, setAlertMsg] = useState<string | null>(null);
+  const [alertType, setAlertType] = useState<'success' | 'error'>('error');
+  const showAlert = (message: string, type: 'success' | 'error' = 'error') => {
+    setAlertMsg(message);
+    setAlertType(type);
+  };
 
   const loadThemePreference = async () => {
     try {
@@ -70,14 +77,37 @@ const Help = () => {
     { icon: 'cube-outline', title: 'Orders & Tracking', subtitle: 'Track your order, shipping updates', route: './orders' }
   ];
 
+  const handleHelpTopicPress = async (route: string) => {
+    try {
+      const userString = await AsyncStorage.getItem('UserObject');
+      const isLoggedIn = !!userString && userString !== "undefined";
+      if (!isLoggedIn) {
+        showAlert("Please login to access this feature.", 'error');
+        return;
+      }
+    } catch {
+      showAlert("Please login to access this feature.", 'error');
+      return;
+    }
+
+    router.push(route as any);
+  };
+
   useEffect(() => {
     loadThemePreference();
   }, []);
 
   return (
     <>
-      <Stack.Screen name="help" options={{ headerShown: false }} />
+      <Stack.Screen options={{ headerShown: false }} />
       <LinearGradient colors={theme.gradientColors  as [string, string, ...string[]]} style={styles.container}>
+        {alertMsg && (
+          <MiniAlert
+            message={alertMsg}
+            type={alertType}
+            onHide={() => setAlertMsg(null)}
+          />
+        )}
         <View>
           <View style={styles.header}>
             <TouchableOpacity
@@ -120,7 +150,7 @@ const Help = () => {
                 icon={topic.icon as React.ComponentProps<typeof Ionicons>['name']}
                 title={topic.title}
                 subtitle={topic.subtitle}
-                action={() => router.push(topic.route as any)}
+                action={() => handleHelpTopicPress(topic.route as any)}
                 theme={theme}
               />
             ))}

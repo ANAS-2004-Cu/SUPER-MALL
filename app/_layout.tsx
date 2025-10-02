@@ -1,8 +1,19 @@
+import * as NavigationBar from 'expo-navigation-bar';
 import { Stack } from 'expo-router';
-import React from 'react';
+import React, { useEffect } from 'react';
+import { Platform } from 'react-native';
 import { CartProvider } from './item/CartContext';
 
 const Layout = () => {
+  useEffect(() => {
+    // Hide navigation bar on Android
+    if (Platform.OS === 'android') {
+      NavigationBar.setVisibilityAsync('hidden');
+      // Optionally, you can set behavior for when user swipes up
+      NavigationBar.setBehaviorAsync('overlay-swipe');
+    }
+  }, []);
+
   return (
     <CartProvider>
       <Stack screenOptions={{ headerShown: false }}>

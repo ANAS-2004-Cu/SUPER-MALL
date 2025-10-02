@@ -208,7 +208,7 @@ const Wishlist = () => {
           <Text style={theme.styles.emptyText}>{error}</Text>
           <TouchableOpacity style={theme.styles.retryButton} onPress={fetchFavorites} activeOpacity={0.7}>
             <Text style={theme.styles.retryButtonText}>Try Again</Text>
-            <AntDesign name="reload1" size={20} color="white" />
+            <AntDesign name="reload" size={20} color="white" />
           </TouchableOpacity>
         </View>
       );
@@ -226,7 +226,7 @@ const Wishlist = () => {
             activeOpacity={0.7}
           >
             <Text style={theme.styles.shopButtonText}>Explore Products</Text>
-            <AntDesign name="arrowright" size={20} color="white" />
+            <AntDesign name="arrow-right" size={20} color="white" />
           </TouchableOpacity>
         </View>
       );
@@ -268,7 +268,7 @@ const Wishlist = () => {
 
   return (
     <>
-      <Stack.Screen name="Wishlist" options={{ headerShown: false }} />
+      <Stack.Screen options={{ headerShown: false }} />
       <LinearGradient colors={theme.colors.gradient  as [string, string, ...string[]]} style={theme.styles.container}>
         {alertMsg && (
           <MiniAlert

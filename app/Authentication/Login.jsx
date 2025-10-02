@@ -96,16 +96,14 @@ const Login = () => {
           await syncCategoriesAndAvailableCategory(userData);
 
           if (userData?.isAdmin === true) {
-            router.replace('./Admintabs');
-            router.push('./Admintabs/Admin');
+            router.replace('/Admintabs/Admin');
           }
           else if (userData?.isBlocked === true) {
             showAlert('This Account is Blocked , Contact With Customer Service', 'error');
             setShowCustomerService(true);
           }
           else {
-            router.replace('/(tabs)');
-            router.push('/home');
+            router.replace('/home');
           }
         } else {
           setError('User not found.');

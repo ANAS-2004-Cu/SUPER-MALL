@@ -59,6 +59,8 @@ const FilterModal = ({
             setLocalNewArrival(newArrival);
             setMinPrice('0');
             setMaxPriceValue(maxPrice.toString());
+            setSpecialMode(null);
+            setSelectedSpecialCategory(null);
         }
     }, [visible, selectedCategory, sortBy, maxPrice, topSelling, newArrival]);
 
@@ -104,6 +106,8 @@ const FilterModal = ({
         setLocalNewArrival(false);
         setMinPrice('0');
         setMaxPriceValue(maxPrice.toString());
+        setSpecialMode(null);
+        setSelectedSpecialCategory(null);
     };
 
     const setPriceRange = (min, max) => {
@@ -111,36 +115,49 @@ const FilterModal = ({
         setMaxPriceValue(max);
     };
 
+    const hasTopCurated = topSellingIds && topSellingIds.length > 0;
+    const hasNewCurated = newArrivalIds && newArrivalIds.length > 0;
+
+    const applyCurated = (mode) => {
+        const ids = mode === 'topSelling' ? topSellingIds : newArrivalIds;
+        // Prefer special category, otherwise fall back to the modal's selected category
+        const effectiveCat =
+            (selectedSpecialCategory && selectedSpecialCategory !== 'All')
+                ? selectedSpecialCategory
+                : (localCategory && localCategory !== 'All' ? localCategory : null);
+
+        let filteredIds = ids;
+        if (effectiveCat) {
+            filteredIds = ids.filter(id => productsInCategory[id] === effectiveCat);
+        }
+
+        onApply({
+            sectionIds: filteredIds,
+            sectionTitle: mode === 'topSelling'
+                ? (effectiveCat ? `Top Selling - ${effectiveCat}` : 'Top Selling')
+                : (effectiveCat ? `New Arrivals - ${effectiveCat}` : 'New Arrivals')
+        });
+        onClose();
+    };
+
     const handleTopSelling = () => {
-        if (selectedSpecialCategory && topSellingIds.length > 0) {
-            onApply({
-                sectionIds: topSellingIds.filter(id =>
-                    productsInCategory[id] === selectedSpecialCategory
-                ),
-                sectionTitle: `Top Selling - ${selectedSpecialCategory}`
-            });
-            onClose();
+        if (hasTopCurated) {
+            if (!specialMode) setSpecialMode('topSelling');
+            else if (specialMode === 'topSelling') applyCurated('topSelling');
             return;
         }
-        if (topSellingIds.length > 0) {
-            setSpecialMode('topSelling');
-        }
+        setLocalTopSelling(v => !v);
+        setSpecialMode(null);
     };
 
     const handleNewArrival = () => {
-        if (selectedSpecialCategory && newArrivalIds.length > 0) {
-            onApply({
-                sectionIds: newArrivalIds.filter(id =>
-                    productsInCategory[id] === selectedSpecialCategory
-                ),
-                sectionTitle: `New Arrivals - ${selectedSpecialCategory}`
-            });
-            onClose();
+        if (hasNewCurated) {
+            if (!specialMode) setSpecialMode('newArrival');
+            else if (specialMode === 'newArrival') applyCurated('newArrival');
             return;
         }
-        if (newArrivalIds.length > 0) {
-            setSpecialMode('newArrival');
-        }
+        setLocalNewArrival(v => !v);
+        setSpecialMode(null);
     };
 
     return (
@@ -169,7 +186,19 @@ const FilterModal = ({
                                     ]}
                                     onPress={handleTopSelling}
                                 >
-                                    <Icon name={specialMode === 'topSelling' ? 'check-circle' : 'circle'} size={18} color={specialMode === 'topSelling' ? theme.checkIconActiveColor : theme.checkIconInactiveColor} />
+                                    <Icon
+                                        name={
+                                            hasTopCurated
+                                                ? (specialMode === 'topSelling' ? 'check-circle' : 'circle')
+                                                : (localTopSelling ? 'check-circle' : 'circle')
+                                        }
+                                        size={18}
+                                        color={
+                                            hasTopCurated
+                                                ? (specialMode === 'topSelling' ? theme.checkIconActiveColor : theme.checkIconInactiveColor)
+                                                : (localTopSelling ? theme.checkIconActiveColor : theme.checkIconInactiveColor)
+                                        }
+                                    />
                                     <Text style={[styles.toggleText, { color: theme.textColor }]}>Top Selling</Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity
@@ -179,12 +208,24 @@ const FilterModal = ({
                                     ]}
                                     onPress={handleNewArrival}
                                 >
-                                    <Icon name={specialMode === 'newArrival' ? 'check-circle' : 'circle'} size={18} color={specialMode === 'newArrival' ? theme.checkIconActiveColor : theme.checkIconInactiveColor} />
+                                    <Icon
+                                        name={
+                                            hasNewCurated
+                                                ? (specialMode === 'newArrival' ? 'check-circle' : 'circle')
+                                                : (localNewArrival ? 'check-circle' : 'circle')
+                                        }
+                                        size={18}
+                                        color={
+                                            hasNewCurated
+                                                ? (specialMode === 'newArrival' ? theme.checkIconActiveColor : theme.checkIconInactiveColor)
+                                                : (localNewArrival ? theme.checkIconActiveColor : theme.checkIconInactiveColor)
+                                        }
+                                    />
                                     <Text style={[styles.toggleText, { color: theme.textColor }]}>New Arrival</Text>
                                 </TouchableOpacity>
                             </View>
 
-                            {specialMode && (
+                            {specialMode && hasTopCurated && specialMode === 'topSelling' && (
                                 <View style={[styles.section, { borderBottomColor: theme.borderColor }]}>
                                     <Text style={[styles.sectionTitle, { color: theme.sectionTitleColor }]}>Choose Category</Text>
                                     <View style={styles.categoriesContainer}>
@@ -222,10 +263,53 @@ const FilterModal = ({
                                     <View style={styles.specialApplyContainer}>
                                         <TouchableOpacity
                                             style={styles.specialApplyButton}
-                                            onPress={() => {
-                                                if (specialMode === 'topSelling') handleTopSelling();
-                                                if (specialMode === 'newArrival') handleNewArrival();
-                                            }}
+                                            onPress={() => applyCurated('topSelling')}
+                                        >
+                                            <Text style={styles.specialApplyText}>Apply</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            )}
+
+                            {specialMode && hasNewCurated && specialMode === 'newArrival' && (
+                                <View style={[styles.section, { borderBottomColor: theme.borderColor }]}>
+                                    <Text style={[styles.sectionTitle, { color: theme.sectionTitleColor }]}>Choose Category</Text>
+                                    <View style={styles.categoriesContainer}>
+                                        {categories.map(category => (
+                                            <TouchableOpacity
+                                                key={category}
+                                                style={[
+                                                    styles.categoryChip,
+                                                    {
+                                                        backgroundColor: selectedSpecialCategory === category
+                                                            ? theme.selectedChipBackground
+                                                            : theme.chipBackground,
+                                                        borderColor: selectedSpecialCategory === category
+                                                            ? theme.selectedChipBorderColor
+                                                            : theme.chipBorderColor
+                                                    }
+                                                ]}
+                                                onPress={() => setSelectedSpecialCategory(category)}
+                                            >
+                                                <Text
+                                                    style={[
+                                                        styles.categoryChipText,
+                                                        {
+                                                            color: selectedSpecialCategory === category
+                                                                ? theme.selectedChipTextColor
+                                                                : theme.chipTextColor
+                                                        }
+                                                    ]}
+                                                >
+                                                    {category}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </View>
+                                    <View style={styles.specialApplyContainer}>
+                                        <TouchableOpacity
+                                            style={styles.specialApplyButton}
+                                            onPress={() => applyCurated('newArrival')}
                                         >
                                             <Text style={styles.specialApplyText}>Apply</Text>
                                         </TouchableOpacity>

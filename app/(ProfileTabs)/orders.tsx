@@ -236,7 +236,7 @@ const Orders = () => {
 
   return (
     <>
-      <Stack.Screen name="orders" options={{ headerShown: false }} />
+      <Stack.Screen options={{ headerShown: false }} />
       <LinearGradient
         colors={theme.gradientColors as [string, string, ...string[]]}
         style={styles.container}

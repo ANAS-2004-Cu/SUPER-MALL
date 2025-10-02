@@ -2,12 +2,21 @@ import { Ionicons } from '@expo/vector-icons';
 import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
+import * as NavigationBar from 'expo-navigation-bar';
 import { Tabs } from "expo-router";
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 
 export default function TabLayout() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
+
+  // Hide navigation bar on Android
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      NavigationBar.setVisibilityAsync('hidden');
+      NavigationBar.setBehaviorAsync('overlay-swipe');
+    }
+  }, []);
 
   const loadTheme = async () => {
     try {
@@ -25,6 +34,11 @@ export default function TabLayout() {
   useFocusEffect(
     useCallback(() => {
       loadTheme();
+      
+      // Ensure navigation bar stays hidden when this screen is focused
+      if (Platform.OS === 'android') {
+        NavigationBar.setVisibilityAsync('hidden');
+      }
     }, [])
   );
 

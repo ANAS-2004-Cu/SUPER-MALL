@@ -296,7 +296,7 @@ const Address = () => {
 
   return (
     <>
-      <Stack.Screen name="address" options={{ headerShown: false }} />
+      <Stack.Screen options={{ headerShown: false }} />
       <LinearGradient colors={theme.gradientColors as [string, string, ...string[]]} style={styles.container}>
         {alertMsg && (
           <MiniAlert
