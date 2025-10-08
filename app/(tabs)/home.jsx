@@ -5,7 +5,7 @@ import { ActivityIndicator, AppState, Dimensions, FlatList, Image, RefreshContro
 import Icon from "react-native-vector-icons/Feather";
 import MiniAlert from '../../components/Component/MiniAlert';
 import ProductCard from '../../components/Component/ProductCard';
-import { auth, createLimit, createOrderBy, getCollection, getUserData } from '../../Firebase/Firebase';
+import { auth, createLimit, createOrderBy, getCollection, getUserCart, getUserData } from '../../Firebase/Firebase';
 import { darkTheme, lightTheme } from '../../Theme/Tabs/HomeTheme';
 
 const Categories = [
@@ -46,6 +46,9 @@ const HomePage = () => {
   const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
   const windowWidth = Dimensions.get('window').width;
   const dimensions = useWindowDimensions();
+  const BANNER_WIDTH = dimensions.width - 40; // Added constant for consistent banner width
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [cartCount, setCartCount] = useState(0);
 
   const checkTheme = async () => {
     try {
@@ -294,6 +297,33 @@ const HomePage = () => {
     } catch { }
   }, []);
 
+  const loadCartCount = useCallback(async () => {
+    try {
+      if (!auth.currentUser) {
+        setCartCount(0);
+        return;
+      }
+      const items = await getUserCart(auth.currentUser.uid);
+      // Sum quantities
+      const total = items.reduce((s, it) => s + (Number(it.quantity) || 1), 0);
+      setCartCount(total);
+    } catch {
+      setCartCount(0);
+    }
+  }, []);
+
+  const checkLoginStatus = useCallback(async () => {
+    try {
+      const userJson = await AsyncStorage.getItem('UserObject');
+      const logged = !!auth.currentUser || (userJson && userJson !== "undefined");
+      setIsLoggedIn(!!logged);
+      if (logged) loadCartCount();
+    } catch {
+      setIsLoggedIn(false);
+      setCartCount(0);
+    }
+  }, [loadCartCount]);
+
   useEffect(() => {
     let unsubscribe;
     const start = async () => {
@@ -309,6 +339,10 @@ const HomePage = () => {
     };
   }, [fetchProducts, updateUserDataFromFirebase, loadAvailableCategoriesFromStorage]);
 
+  useEffect(() => {
+    checkLoginStatus();
+  }, [checkLoginStatus, currentUser]);
+
   const onRefresh = useCallback(
     async () => {
       try {
@@ -318,17 +352,19 @@ const HomePage = () => {
           fetchProducts(),
           fetchRecommendedProducts(),
           updateUserDataFromFirebase(),
-          fetchAllProducts()
+          fetchAllProducts(),
+          checkLoginStatus()
         ].map(p => p.catch ? p : Promise.resolve()));
 
         // ensure ProductsManage is fetched and stored before reloading categories from storage
         await fetchProductsManage();
         await loadAvailableCategoriesFromStorage();
+        await loadCartCount();
       } finally {
         setRefreshing(false);
       }
     },
-    [fetchProducts, fetchRecommendedProducts, updateUserDataFromFirebase, fetchAllProducts, fetchProductsManage, loadAvailableCategoriesFromStorage]
+    [fetchProducts, fetchRecommendedProducts, updateUserDataFromFirebase, fetchAllProducts, fetchProductsManage, loadAvailableCategoriesFromStorage, checkLoginStatus, loadCartCount]
   );
 
   useEffect(() => {
@@ -434,34 +470,47 @@ const HomePage = () => {
     }
   };
 
-  // Auto-scroll banner effect
+  // Auto-scroll banner effect (updated: remove dependency on currentBannerIndex & use scrollToOffset)
   useEffect(() => {
     if (!adBanners || adBanners.length <= 1) return;
-    
-    const bannerInterval = setInterval(() => {
-      if (bannerRef.current) {
-        let nextIndex = (currentBannerIndex + 1) % adBanners.length;
-        setCurrentBannerIndex(nextIndex);
-        
-        bannerRef.current.scrollToIndex({
-          index: nextIndex,
-          animated: true,
-          viewPosition: 0
-        });
-      }
-    }, 3000); // Change banner every 3 seconds
-    
-    return () => clearInterval(bannerInterval);
-  }, [adBanners, currentBannerIndex]);
+    const interval = setInterval(() => {
+      setCurrentBannerIndex(prev => {
+        const next = (prev + 1) % adBanners.length;
+        if (bannerRef.current) {
+          try {
+            bannerRef.current.scrollToOffset({
+              offset: next * BANNER_WIDTH,
+              animated: true
+            });
+          } catch {}
+        }
+        return next;
+      });
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [adBanners, BANNER_WIDTH]);
 
-  // Handle scroll end to update current index
+  // Handle scroll end to update current index (use BANNER_WIDTH)
   const handleBannerScroll = useCallback((event) => {
     if (!adBanners || adBanners.length <= 1) return;
-    
     const contentOffset = event.nativeEvent.contentOffset.x;
-    const index = Math.round(contentOffset / (windowWidth - 40));
+    const index = Math.round(contentOffset / BANNER_WIDTH);
+    if (index !== currentBannerIndex) setCurrentBannerIndex(index);
+  }, [adBanners, BANNER_WIDTH, currentBannerIndex]);
+
+  // New: allow tapping pagination dots to jump to banner (use scrollToOffset always)
+  const scrollToBanner = useCallback((index) => {
+    if (!adBanners || index < 0 || index >= adBanners.length) return;
     setCurrentBannerIndex(index);
-  }, [adBanners, windowWidth]);
+    if (bannerRef.current) {
+      try {
+        bannerRef.current.scrollToOffset({
+          offset: index * BANNER_WIDTH,
+          animated: true
+        });
+      } catch {}
+    }
+  }, [adBanners, BANNER_WIDTH]);
 
   if (error) {
     return (
@@ -499,10 +548,33 @@ const HomePage = () => {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.header}>
-          <View style={{ flex: 1 }}></View>
+          {!isLoggedIn ? (
+            <TouchableOpacity onPress={() => router.push("/Authentication/Login")}>
+              <View
+                style={[
+                  styles.headerLoginContainer,
+                  { backgroundColor: theme.headerIconBackground }
+                ]}
+              >
+                <Icon name="log-in" size={20} color={theme.headerIconColor} />
+                <Text style={[styles.loginText, { color: theme.headerIconColor }]}>
+                  Login
+                </Text>
+              </View>
+            </TouchableOpacity>
+          ) : (
+            <View style={{ width: 45 }} />
+          )}
           <TouchableOpacity onPress={handleCartPress}>
             <View style={[styles.headerIconContainer, { backgroundColor: theme.headerIconBackground }]}>
               <Icon name="shopping-cart" size={20} color={theme.headerIconColor} />
+              {cartCount > 0 && (
+                <View style={styles.cartBadge}>
+                  <Text style={styles.cartBadgeText}>
+                    {cartCount > 99 ? '99+' : cartCount}
+                  </Text>
+                </View>
+              )}
             </View>
           </TouchableOpacity>
         </View>
@@ -612,14 +684,14 @@ const HomePage = () => {
                     onPress={() => handleBannerPress(item)} 
                     style={[
                       styles.adBannerItemContainer, 
-                      { width: dimensions.width - 40 }
+                      { width: BANNER_WIDTH }
                     ]}
                     activeOpacity={0.9}
                   >
                     <Image
                       source={{ uri: item.img }}
                       style={styles.adBannerImage}
-                      resizeMode="contain" // Changed to "contain" to ensure full width is visible
+                      resizeMode="contain"
                       defaultSource={require('../../assets/images/loading-buffering.gif')}
                     />
                   </TouchableOpacity>
@@ -629,28 +701,29 @@ const HomePage = () => {
                 pagingEnabled
                 onMomentumScrollEnd={handleBannerScroll}
                 snapToAlignment="center"
-                snapToInterval={dimensions.width - 40}
+                snapToInterval={BANNER_WIDTH}
                 decelerationRate="fast"
+                getItemLayout={(_, index) => ({
+                  length: BANNER_WIDTH,
+                  offset: BANNER_WIDTH * index,
+                  index
+                })}
                 contentContainerStyle={styles.adBannerContentContainer}
-                onScrollToIndexFailed={(info) => {
-                  const wait = new Promise(resolve => setTimeout(resolve, 500));
-                  wait.then(() => {
-                    if (bannerRef.current) {
-                      bannerRef.current.scrollToIndex({ 
-                        index: info.index, 
-                        animated: true 
-                      });
-                    }
-                  });
-                }}
               />
               <View style={styles.paginationContainer}>
                 {adBanners.map((_, index) => (
-                  <View
+                  <TouchableOpacity
                     key={index}
+                    onPress={() => scrollToBanner(index)}
+                    activeOpacity={0.8}
                     style={[
                       styles.paginationDot,
-                      { backgroundColor: index === currentBannerIndex ? theme.accentColor : theme.paginationInactive || '#ccc' }
+                      {
+                        backgroundColor:
+                          index === currentBannerIndex
+                            ? theme.accentColor
+                            : theme.paginationInactive || '#ccc'
+                      }
                     ]}
                   />
                 ))}
@@ -876,6 +949,22 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginHorizontal: 5,
+    position: 'relative',
+  },
+  // New container for login button with text
+  headerLoginContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    height: 45,
+    borderRadius: 20,
+    justifyContent: 'center',
+    marginHorizontal: 5,
+  },
+  loginText: {
+    marginLeft: 6,
+    fontSize: 14,
+    fontWeight: '600',
   },
   bannerimage: {
     width: '100%',
@@ -940,6 +1029,23 @@ const styles = StyleSheet.create({
   },
   retryButtonText: {
     fontWeight: 'bold',
+  },
+  cartBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#e53935',
+    minWidth: 18,
+    paddingHorizontal: 4,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  cartBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700'
   },
 });
 

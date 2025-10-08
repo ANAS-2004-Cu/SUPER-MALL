@@ -1,4 +1,10 @@
 
+Email address verification
+
+Email address change
+
+firebase
+
 preferredCategories --> settings --------------------
 
 catigory from home --> products ---------------------

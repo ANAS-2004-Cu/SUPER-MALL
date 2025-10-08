@@ -1,359 +1,567 @@
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { getAuth } from "firebase/auth";
-import { arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, updateDoc } from "firebase/firestore";
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { db } from "../Firebase/Firebase.jsx";
-// import LottieView from 'lottie-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Stack, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import Icon from 'react-native-vector-icons/Feather';
 import MiniAlert from '../components/Component/MiniAlert';
-const CartScreen = () => {
+import { auth, clearUserCart, getDocument, getUserCart, removeCartItem, updateCartItemQuantity } from '../Firebase/Firebase';
+import { darkTheme, lightTheme } from '../Theme/Tabs/HomeTheme';
+
+const computeProductPricing = (product = {}) => {
+  const base = Number(product.price) || 0;
+  let discountPercent = 0;
+  let discounted = base;
+
+  if (product.discountPrice !== undefined && product.discountPrice !== null) {
+    const dp = Number(product.discountPrice);
+    if (!isNaN(dp) && dp >= 0 && dp <= base) {
+      discounted = dp;
+      discountPercent = base > 0 ? Math.round((1 - discounted / base) * 100) : 0;
+    }
+  } else {
+    const perc = product.discount ?? product.discountPercent ?? product.offerPercentage ?? product.off ?? product.percentageOff;
+    if (perc !== undefined && perc !== null) {
+      const pNum = Number(perc);
+      if (!isNaN(pNum) && pNum > 0 && pNum < 100) {
+        discountPercent = pNum;
+        discounted = base * (1 - pNum / 100);
+      }
+    }
+  }
+  discounted = Math.max(0, discounted);
+  return { base, discounted, discountPercent };
+};
+
+// Helper: compute maximum allowed purchase quantity for a product
+const getMaxAllowedForProduct = (product = {}) => {
+  const stock = Number(product.stockQuantity);
+  const perOrder = Number(product.AvilableQuantityBerOeder);
+  const validStock = !isNaN(stock) && stock > 0 ? stock : Infinity;
+  const validPerOrder = !isNaN(perOrder) && perOrder > 0 ? perOrder : Infinity;
+  const maxAllowed = Math.min(validStock, validPerOrder);
+  return maxAllowed === Infinity ? (isNaN(stock) ? 9999 : stock) : maxAllowed;
+};
+
+const CartPage = () => {
   const router = useRouter();
-  const [cart, setCart] = useState([]);
+  const [theme, setTheme] = useState(lightTheme);
+  const [cartItems, setCartItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [isCheckoutComplete, setIsCheckoutComplete] = useState(false);
   const [alertMsg, setAlertMsg] = useState(null);
   const [alertType, setAlertType] = useState('success');
-  const [load, setLoad] = useState(false);
-  const showAlert = (message, type = 'success') => {
-    setLoad(true);
-    setAlertMsg(message);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [fetchingProducts, setFetchingProducts] = useState(false);
+  const [couponCode, setCouponCode] = useState('');
+  const [couponDiscount, setCouponDiscount] = useState(0); // percent
+  const [couponApplied, setCouponApplied] = useState(false);
+  const [couponError, setCouponError] = useState(null);
+
+  const showAlert = (msg, type = 'success') => {
+    setAlertMsg(msg);
     setAlertType(type);
-    setTimeout(() => {
-      setAlertMsg(null);
-      setLoad(false);
-    }, 3000);
+    setTimeout(() => setAlertMsg(null), 2500);
   };
-  useEffect(() => {
-    const fetchCart = async () => {
-      try {
-        const user = getAuth().currentUser;
-        if (!user) return;
 
-        const cartRef = collection(db, "Users", user.uid, "cart");
-        const cartSnap = await getDocs(cartRef);
-
-        const items = await Promise.all(
-          cartSnap.docs.map(async (docSnap) => {
-            const { productId, quantity } = docSnap.data();
-            const productRef = doc(db, "products", productId);
-            const productSnap = await getDoc(productRef);
-
-            if (productSnap.exists()) {
-              const productData = productSnap.data();
-              return {
-                id: docSnap.id,
-                productId,
-                quantity,
-                ...productData
-              };
-            }
-            return null;
-          })
-        );
-
-        setCart(items.filter(item => item !== null));
-      } catch (error) {
-        console.error("Error loading cart:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchCart();
+  const loadTheme = useCallback(async () => {
+    try {
+      const mode = await AsyncStorage.getItem('ThemeMode');
+      setTheme(mode === '2' ? darkTheme : lightTheme);
+    } catch {}
   }, []);
 
-  const updateQuantity = async (id, type) => {
-    const user = getAuth().currentUser;
-    if (!user) return;
-
-    const item = cart.find(i => i.id === id);
-    if (!item) return;
-
-    const newQuantity = type === 'increase' ? item.quantity + 1 : Math.max(1, item.quantity - 1);
-    const itemRef = doc(db, "Users", user.uid, "cart", id);
-    await updateDoc(itemRef, { quantity: newQuantity });
-
-    setCart(prev =>
-      prev.map(i => (i.id === id ? { ...i, quantity: newQuantity } : i))
-    );
-  };
-
-  const removeFromCart = async (id) => {
-    const user = getAuth().currentUser;
-    if (!user) return;
-
-    const itemRef = doc(db, "Users", user.uid, "cart", id);
-    await deleteDoc(itemRef);
-
-    setCart(prev => prev.filter(i => i.id !== id));
-  };
-  const user = getAuth().currentUser;
-  const clearCart = async () => {
-
-    if (!user) return;
-
-    const cartRef = collection(db, "Users", user.uid, "cart");
-    const cartSnap = await getDocs(cartRef);
-    const deletions = cartSnap.docs.map(docSnap => deleteDoc(doc(db, "Users", user.uid, "cart", docSnap.id)));
-    await Promise.all(deletions);
-
-    setCart([]);
-  };
-
-  const handleCheckout = async () => {
+  const checkLogin = useCallback(async () => {
     try {
-      const cartRef = collection(db, "Users", user.uid, "cart");
-      const snapshot = await getDocs(cartRef);
-  
-      const cartItems = [];
-      snapshot.forEach((docSnap) => {
-        cartItems.push({
-          ...docSnap.data(),
-        });
-      });
-  
-      if (cartItems.length === 0) {
-        showAlert("Cart is empty, there are no items to checkout.", "error");
+      const userJson = await AsyncStorage.getItem('UserObject');
+      setIsLoggedIn(!!auth.currentUser || (userJson && userJson !== 'undefined'));
+    } catch {
+      setIsLoggedIn(false);
+    }
+  }, []);
+
+  const loadCartFromFirestore = useCallback(async () => {
+    if (!auth.currentUser) {
+      setCartItems([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const rawCart = await getUserCart(auth.currentUser.uid);
+      if (!rawCart.length) {
+        setCartItems([]);
         return;
       }
-  
-      const userDocRef = doc(db, "Users", user.uid);
-  
-      // هيكل الأوردر الجديد
-      const newOrder = {
-        createdAt: new Date().toISOString(), // وقت إنشاء الأوردر
-        OrderedProducts: cartItems
-      };
-  
-      // إضافة الأوردر في مصفوفة Orders
-      await updateDoc(userDocRef, {
-        Orders: arrayUnion(newOrder)
-      });
-  
-      setIsCheckoutComplete(true);
-  
-      // مسح السلة بعد الشراء
-      await Promise.all(snapshot.docs.map(docSnap =>
-        deleteDoc(doc(db, "Users", user.uid, "cart", docSnap.id))
-      ));
-  
-      setCart([]);
-  
-    } catch (error) {
-      console.error("Error during checkout:", error);
-      showAlert("Could not complete checkout. Please try again.", "error");
+      setFetchingProducts(true);
+      const enriched = [];
+      for (const entry of rawCart) {
+        try {
+          const prodRes = await getDocument('products', entry.productId);
+          if (prodRes.success) {
+            enriched.push({
+              productId: entry.productId,
+              quantity: entry.quantity || 1,
+              product: prodRes.data
+            });
+          }
+        } catch {}
+      }
+      // Clamp any quantities that exceed constraints
+      const adjusted = [];
+      for (const ci of enriched) {
+        const maxAllowed = getMaxAllowedForProduct(ci.product);
+        let q = ci.quantity || 1;
+        if (q > maxAllowed) {
+          q = maxAllowed < 1 ? 1 : maxAllowed;
+          // persist correction
+          await updateCartItemQuantity(auth.currentUser?.uid, ci.productId, q);
+        }
+        adjusted.push({ ...ci, quantity: q });
+      }
+      setCartItems(adjusted);
+    } finally {
+      setFetchingProducts(false);
+      setLoading(false);
     }
-  };
-  
+  }, []);
 
+  useEffect(() => {
+    loadTheme();
+    const interval = setInterval(loadTheme, 1000);
+    return () => clearInterval(interval);
+  }, [loadTheme]);
 
-  const applyDiscount = (price, discountPercentage) => {
-    return Math.floor(price - (price * discountPercentage) / 100);
+  useEffect(() => {
+    checkLogin();
+  }, [checkLogin, auth.currentUser]);
+
+  useEffect(() => {
+    loadCartFromFirestore();
+  }, [loadCartFromFirestore, auth.currentUser]);
+
+  const updateQuantity = async (productId, delta) => {
+    const target = cartItems.find(c => c.productId === productId);
+    if (!target) return;
+    const product = target.product || {};
+    const maxAllowed = getMaxAllowedForProduct(product);
+    const current = target.quantity || 1;
+    // Prevent going below 1
+    if (delta < 0 && current <= 1) {
+      showAlert('Minimum quantity is 1', 'error');
+      return;
+    }
+    let desired = current + delta;
+    if (desired < 1) desired = 1;
+    if (desired > maxAllowed) {
+      const stock = Number(product.stockQuantity);
+      const perOrder = Number(product.AvilableQuantityBerOeder);
+      if (!isNaN(perOrder) && perOrder > 0 && maxAllowed === perOrder) {
+        showAlert(`Max per order is ${perOrder}`, 'error');
+      } else if (!isNaN(stock) && stock > 0) {
+        showAlert(`Only ${stock} in stock`, 'error');
+      } else {
+        showAlert('Cannot increase quantity', 'error');
+      }
+      desired = Math.min(current, maxAllowed);
+    }
+    if (desired === current) return;
+    setCartItems(prev =>
+      prev.map(ci =>
+        ci.productId === productId ? { ...ci, quantity: desired } : ci
+      )
+    );
+    await updateCartItemQuantity(auth.currentUser?.uid, productId, desired);
   };
-  if (isCheckoutComplete) {
+
+  const removeItem = async (productId) => {
+    setCartItems(prev => prev.filter(ci => ci.productId !== productId));
+    await removeCartItem(auth.currentUser?.uid, productId);
+    showAlert('Item removed', 'success');
+  };
+
+  const clearCart = () => {
+    Alert.alert('Clear Cart', 'Remove all items?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Yes',
+        style: 'destructive',
+        onPress: async () => {
+          setCartItems([]);
+          await clearUserCart(auth.currentUser?.uid);
+          showAlert('Cart cleared', 'success');
+        }
+      }
+    ]);
+  };
+
+  const subtotalData = cartItems.reduce((acc, it) => {
+    const { base, discounted } = computeProductPricing(it.product);
+    const qty = Number(it.quantity) || 1;
+    acc.discounted += discounted * qty;
+    acc.original += base * qty;
+    return acc;
+  }, { discounted: 0, original: 0 });
+
+  const subtotal = subtotalData.discounted;
+  const totalSavings = subtotalData.original - subtotal;
+  const totalItems = cartItems.reduce((s, it) => s + (Number(it.quantity) || 1), 0);
+
+  const validCoupons = {
+    SAVE10: 10,
+    SAVE15: 15,
+    SAVE20: 20,
+    WELCOME5: 5
+  };
+
+  const applyCoupon = () => {
+    const code = couponCode.trim().toUpperCase();
+    if (!code) {
+      setCouponError('Enter a coupon code');
+      return;
+    }
+    if (!validCoupons[code]) {
+      setCouponError('Invalid coupon');
+      setCouponDiscount(0);
+      setCouponApplied(false);
+      return;
+    }
+    setCouponDiscount(validCoupons[code]);
+    setCouponApplied(true);
+    setCouponError(null);
+    showAlert(`Coupon ${code} applied`);
+  };
+
+  const removeCoupon = () => {
+    setCouponCode('');
+    setCouponDiscount(0);
+    setCouponApplied(false);
+    setCouponError(null);
+  };
+
+  const couponValue = (subtotal * couponDiscount) / 100;
+  const grandTotal = subtotal - couponValue;
+
+  const formatPrice = (n) => '$' + (n || 0).toFixed(2);
+
+  const handleCheckout = () => {
+    if (!isLoggedIn) {
+      showAlert('Login required', 'error');
+      return;
+    }
+    if (cartItems.length === 0) {
+      showAlert('Cart is empty', 'error');
+      return;
+    }
+    router.push('/Pages/checkout');
+  };
+
+  const renderItem = ({ item }) => {
+    const qty = item.quantity || 1;
+    const p = item.product || {};
+    const { base, discounted, discountPercent } = computeProductPricing(p);
+    const hasDiscount = discountPercent > 0 && discounted < base;
+    const maxAllowed = getMaxAllowedForProduct(p);
+    const disablePlus = qty >= maxAllowed;
+    const disableMinus = qty <= 1;
+
     return (
-      <View style={{
-        backgroundColor: 'white',
-        padding: 20,
-        borderRadius: 10,
-        alignItems: 'center',
-        justifyContent: 'center',
-        flex: 1,
-      }}>
-        <Text style={{ fontSize: 20, marginTop: 20 }}>Checkout Successful!</Text>
-
+      <View style={[styles.itemContainer, { backgroundColor: theme.cardBackground, shadowColor: theme.searchBarShadow }]}>
+        <View style={{ position: 'relative' }}>
+          <TouchableOpacity
+            style={styles.imageWrapper}
+            onPress={() => router.push({ pathname: '/singlepage', params: { id: item.productId } })}
+          >
+            {p.image ? (
+              <Image
+                source={{ uri: p.image }}
+                style={styles.itemImage}
+                resizeMode="cover"
+                defaultSource={require('../assets/images/loading-buffering.gif')}
+              />
+            ) : (
+              <View style={[styles.itemImage, { justifyContent: 'center', alignItems: 'center' }]}>
+                <Icon name="image" size={22} color={theme.inputPlaceholder} />
+              </View>
+            )}
+          </TouchableOpacity>
+          {hasDiscount && (
+            <View style={[styles.discountBadge, { backgroundColor: theme.accentColor }]}>
+              <Text style={styles.discountBadgeText}>-{discountPercent}%</Text>
+            </View>
+          )}
+        </View>
+        <View style={styles.itemInfo}>
+          <Text style={[styles.itemTitle, { color: theme.text }]} numberOfLines={2}>{p.name || 'Unknown product'}</Text>
+          <View style={styles.priceRow}>
+            <Text style={[styles.itemPrice, { color: theme.accentColor }]}>
+              {formatPrice(discounted)}
+            </Text>
+            {hasDiscount && (
+              <Text style={[styles.originalPrice, { color: theme.inputPlaceholder }]}>
+                {formatPrice(base)}
+              </Text>
+            )}
+          </View>
+          <View style={styles.qtyRow}>
+            <TouchableOpacity
+              style={[styles.qtyBtn, { backgroundColor: theme.headerIconBackground, opacity: disableMinus ? 0.4 : 1 }]}
+              disabled={disableMinus}
+              onPress={() => updateQuantity(item.productId, -1)}
+            >
+              <Icon name="minus" size={16} color={theme.headerIconColor} />
+            </TouchableOpacity>
+            <Text style={[styles.qtyValue, { color: theme.text }]}>{qty}</Text>
+            <TouchableOpacity
+              style={[styles.qtyBtn, { backgroundColor: theme.headerIconBackground, opacity: disablePlus ? 0.4 : 1 }]}
+              disabled={disablePlus}
+              onPress={() => updateQuantity(item.productId, +1)}
+            >
+              <Icon name="plus" size={16} color={theme.headerIconColor} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.removeBtn} onPress={() => removeItem(item.productId)}>
+              <Icon name="trash-2" size={18} color={theme.errorText || '#e53935'} />
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
     );
-  }
-  const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const subtotal = cart.reduce((sum, item) => sum + applyDiscount(item.price, item.discount) * item.quantity, 0);
-  const shippingCost = cart.length > 0 ? 50 : 0;
-  const tax = 0;
-  let total = subtotal + shippingCost + tax;
-  if (totalItems >= 5) total *= 0.9;
-  total = Math.round(total);
-
-  if (loading) {
-    return <ActivityIndicator style={{ flex: 1 }} size="large" color="#000" />;
-  }
+  };
 
   return (
-    <View style={styles.container}>
+    <>
+      <Stack.Screen
+        options={{
+          headerShown: true,
+          title: `Cart (${totalItems})`,
+          headerStyle: { backgroundColor: theme.background },
+          headerTintColor: theme.text,
+          headerRight: () => (
+            cartItems.length > 0 ? (
+              <TouchableOpacity onPress={clearCart} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 }}>
+                <Icon name="x-circle" size={20} color={theme.accentColor} />
+                <Text style={{ color: theme.accentColor, marginLeft: 6, fontSize: 12, fontWeight: '600' }}>Delete All</Text>
+              </TouchableOpacity>
+            ) : null
+          )
+        }}
+      />
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
+        {!isLoggedIn ? (
+          <View style={styles.emptyContainer}>
+            <Icon name="lock" size={70} color={theme.accentColor} />
+            <Text style={[styles.emptyText, { color: theme.text }]}>Login to view your cart</Text>
+            <TouchableOpacity
+              style={[styles.shopBtn, { backgroundColor: theme.accentColor }]}
+              onPress={() => router.push('/Authentication/Login')}
+            >
+              <Text style={styles.shopBtnText}>Login</Text>
+            </TouchableOpacity>
+          </View>
+        ) : loading || fetchingProducts ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={theme.loadingIndicator || theme.accentColor} />
+          </View>
+        ) : cartItems.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Icon name="shopping-cart" size={70} color={theme.accentColor} />
+            <Text style={[styles.emptyText, { color: theme.text }]}>Your cart is empty</Text>
+            <TouchableOpacity
+              style={[styles.shopBtn, { backgroundColor: theme.accentColor }]}
+              onPress={() => router.push('/(tabs)/home')}
+            >
+              <Text style={styles.shopBtnText}>Start Shopping</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <>
+            <FlatList
+              data={cartItems}
+              keyExtractor={(it) => it.productId?.toString()}
+              renderItem={renderItem}
+              contentContainerStyle={{ paddingBottom: 140 }}
+              showsVerticalScrollIndicator={false}
+            />
+            <View style={[styles.footer, { backgroundColor: theme.cardBackground, shadowColor: theme.searchBarShadow }]}>
+              <View style={styles.couponRow}>
+                <TextInput
+                  style={[styles.couponInput, { borderColor: theme.inputPlaceholder, color: theme.text }]}
+                  placeholder="Coupon code"
+                  placeholderTextColor={theme.inputPlaceholder}
+                  value={couponCode}
+                  onChangeText={(t) => { setCouponCode(t); setCouponError(null); }}
+                  editable={!couponApplied}
+                  autoCapitalize="characters"
+                />
+                {couponApplied ? (
+                  <TouchableOpacity onPress={removeCoupon} style={[styles.couponBtn, { backgroundColor: '#b71c1c' }]}>
+                    <Text style={styles.couponBtnText}>Remove</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity onPress={applyCoupon} style={[styles.couponBtn, { backgroundColor: theme.accentColor }]}>
+                    <Text style={styles.couponBtnText}>Apply</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              {couponError && <Text style={[styles.couponError, { color: theme.errorText || '#e53935' }]}>{couponError}</Text>}
+              {couponApplied && (
+                <Text style={[styles.couponApplied, { color: theme.successText || '#2e7d32' }]}>
+                  Coupon {couponCode.trim().toUpperCase()} (-{couponDiscount}%)
+                </Text>
+              )}
+              <View style={styles.totalRow}>
+                <Text style={[styles.totalLabel, { color: theme.text }]}>Subtotal</Text>
+                <Text style={[styles.totalValue, { color: theme.accentColor }]}>{formatPrice(subtotal)}</Text>
+              </View>
+              {totalSavings > 0 && (
+                <View style={styles.totalRow}>
+                  <Text style={[styles.savingsLabel, { color: theme.successText || '#2e7d32' }]}>Savings</Text>
+                  <Text style={[styles.savingsValue, { color: theme.successText || '#2e7d32' }]}>-{formatPrice(totalSavings)}</Text>
+                </View>
+              )}
+              {couponApplied && (
+                <View style={styles.totalRow}>
+                  <Text style={[styles.couponLabel, { color: theme.accentColor }]}>Coupon Discount</Text>
+                  <Text style={[styles.couponValue, { color: theme.accentColor }]}>-{formatPrice(couponValue)}</Text>
+                </View>
+              )}
+              <View style={[styles.totalRow, { marginTop: 4 }]}>
+                <Text style={[styles.grandLabel, { color: theme.text }]}>Total</Text>
+                <Text style={[styles.grandValue, { color: theme.accentColor }]}>{formatPrice(grandTotal)}</Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.checkoutBtn, { backgroundColor: theme.accentColor }]}
+                onPress={handleCheckout}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.checkoutText}>Proceed to Checkout</Text>
+                <Icon name="arrow-right" size={18} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+      </View>
       {alertMsg && (
         <MiniAlert
           message={alertMsg}
           type={alertType}
           onHide={() => setAlertMsg(null)}
+          theme={theme}
         />
       )}
-      <View style={styles.topBar}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.iconButton}>
-            <Ionicons name="arrow-back-outline" size={24} color="black" />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.iconButton} onPress={() => router.replace('/(tabs)/products')}>
-            <Ionicons name="pricetags-outline" size={24} color="black" />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.iconButton} onPress={() => router.replace('/(tabs)/home')}>
-            <Ionicons name="home-outline" size={24} color="black" />
-          </TouchableOpacity>
-        </View>
-
-        <Text style={styles.title}>Cart</Text>
-
-        {cart.length > 0 ? (
-          <TouchableOpacity style={styles.clearButton} onPress={clearCart}>
-            <Text style={styles.clearButtonText}>Remove All</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={{ width: 90, justifyContent: 'center', alignItems: 'center' }}>
-          </View>
-        )}
-      </View>
-
-      <FlatList
-        data={cart}
-        keyExtractor={item => item.id}
-        renderItem={({ item }) => (
-          <View style={styles.cartItem}>
-            <TouchableOpacity onPress={() => router.push({ pathname: "/singlepage", params: { id: item.productId } })}>
-              <Image source={{ uri: item.image }} style={styles.image} />
-            </TouchableOpacity>
-            <View style={styles.info}>
-              <Text style={styles.name}>{item.name}</Text>
-              <Text style={styles.price}>EGP{applyDiscount(item.price, item.discount) * item.quantity}</Text>
-            </View>
-            <View style={styles.quantityContainer}>
-              <TouchableOpacity onPress={() => updateQuantity(item.id, 'decrease')} style={styles.quantityButton}>
-                <Text style={styles.quantityText}>-</Text>
-              </TouchableOpacity>
-              <Text style={styles.quantity}>{item.quantity}</Text>
-              <TouchableOpacity onPress={() => updateQuantity(item.id, 'increase')} style={styles.quantityButton}>
-                <Text style={styles.quantityText}>+</Text>
-              </TouchableOpacity>
-            </View>
-            <TouchableOpacity onPress={() => removeFromCart(item.id)} style={styles.deleteButton}>
-              <Text style={styles.deleteText}>Delete</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      />
-      {cart.length > 0 ? (
-        <>
-          <View style={styles.summary}>
-            <Text style={styles.summaryText}>Subtotal: EGP{subtotal}</Text>
-            <Text style={styles.summaryText}>Shipping Cost: EGP{shippingCost}</Text>
-            <Text style={styles.summaryText}>Tax: EGP{tax}</Text>
-            {totalItems >= 5 && (
-              <Text style={[styles.summaryText, { color: 'green' }]}>Discount: 10% Applied</Text>
-            )}
-            <Text style={styles.total}>Total: EGP{total}</Text>
-          </View>
-
-          <TouchableOpacity style={styles.checkoutButton} onPress={() => { handleCheckout() }}>
-            <Text style={styles.checkoutText}>Checkout</Text>
-          </TouchableOpacity>
-        </>) : (
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <Text style={{ fontSize: 18, color: '#555', textAlign: 'center', marginTop: 20 }}>
-            Your Cart is currently empty.
-          </Text>
-          <Text style={{ fontSize: 16, color: '#888', textAlign: 'center', marginTop: 10 }}>
-            Start shopping and add items to your cart to see them here.
-          </Text>
-          <TouchableOpacity
-            style={{
-              backgroundColor: '#FF5733',
-              paddingVertical: 12,
-              paddingHorizontal: 30,
-              borderRadius: 25,
-              marginTop: 20,
-            }}
-            onPress={() => router.replace("/(tabs)/home")}
-          >
-            <Text style={{ color: 'white', fontSize: 16, textAlign: 'center' }}>
-              Shop Now
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-
-      )}
-    </View>
+    </>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 15, backgroundColor: '#fff' },
-  topBar: {
+  container: { flex: 1, padding: 16 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20 },
+  emptyText: { fontSize: 18, fontWeight: '600', marginTop: 16, marginBottom: 20, textAlign: 'center' },
+  shopBtn: { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 25 },
+  shopBtnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  itemContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 14,
+    elevation: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4
+  },
+  imageWrapper: { width: 90, height: 90, borderRadius: 10, overflow: 'hidden', marginRight: 12 },
+  itemImage: { width: '100%', height: '100%' },
+  itemInfo: { flex: 1, justifyContent: 'space-between' },
+  itemTitle: { fontSize: 14, fontWeight: '600' },
+  priceRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
+  itemPrice: { marginTop: 4, fontSize: 15, fontWeight: '700' },
+  originalPrice: {
+    fontSize: 12,
+    textDecorationLine: 'line-through',
+    marginLeft: 8,
+    fontWeight: '500'
+  },
+  discountBadge: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6
+  },
+  discountBadgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  qtyRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
+  qtyBtn: { width: 32, height: 32, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  qtyValue: { width: 36, textAlign: 'center', fontSize: 15, fontWeight: '600' },
+  removeBtn: { marginLeft: 'auto', padding: 6 },
+  footer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 24,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    elevation: 12,
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8
+  },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
+  totalLabel: { fontSize: 16, fontWeight: '600' },
+  totalValue: { fontSize: 18, fontWeight: '700' },
+  savingsLabel: { fontSize: 14, fontWeight: '600' },
+  savingsValue: { fontSize: 16, fontWeight: '700' },
+  checkoutBtn: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 30
   },
-  title: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    textAlign: 'center',
+  checkoutText: { color: '#fff', fontWeight: '700', fontSize: 15, marginRight: 8 },
+  couponRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12
+  },
+  couponInput: {
     flex: 1,
+    height: 44,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    fontSize: 14
   },
-  iconButton: {
-    backgroundColor: 'white',
-    padding: 10,
+  couponBtn: {
+    marginLeft: 10,
+    paddingHorizontal: 16,
+    height: 44,
     borderRadius: 10,
     justifyContent: 'center',
-    alignItems: 'center',
+    alignItems: 'center'
   },
-  clearButton: {
-    backgroundColor: 'red',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-  },
-  clearButtonText: {
+  couponBtnText: {
     color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 14,
+    fontWeight: '600',
+    fontSize: 13
   },
-  cartList: { flex: 1 },
-  cartItem: {
-    flexDirection: 'row',
-    backgroundColor: '#f9f9f9',
-    padding: 10,
-    borderRadius: 10,
-    marginBottom: 10,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
-    elevation: 3,
-    flexWrap: 'wrap',
+  couponError: {
+    fontSize: 12,
+    marginTop: -6,
+    marginBottom: 8
   },
-  image: { width: 60, height: 60, resizeMode: 'contain', marginRight: 10 },
-  info: { flex: 1, minWidth: '40%' },
-  name: { fontSize: 16, fontWeight: 'bold' },
-  details: { fontSize: 14, color: 'gray' },
-  price: { fontSize: 16, fontWeight: 'bold', color: 'red', position: 'relative', top: 10 },
-  quantityContainer: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 10 },
-  quantityButton: { backgroundColor: '#ddd', padding: 5, borderRadius: 5 },
-  quantityText: { fontSize: 18, fontWeight: 'bold' },
-  quantity: { fontSize: 16, fontWeight: 'bold', marginHorizontal: 8 },
-  deleteButton: { backgroundColor: 'red', padding: 6, borderRadius: 5, marginLeft: 5 },
-  deleteText: { color: '#fff', fontWeight: 'bold' },
-  summary: { padding: 15, borderTopWidth: 1, borderColor: '#ddd', marginTop: 10 },
-  summaryText: { fontSize: 16, marginBottom: 5 },
-  total: { fontSize: 18, fontWeight: 'bold', color: 'black' },
-  checkoutButton: {
-    backgroundColor: '#E5C7A9',
-    padding: 15,
-    borderRadius: 10,
-    marginTop: 10,
-    alignItems: 'center',
+  couponApplied: {
+    fontSize: 12,
+    marginTop: -6,
+    marginBottom: 8,
+    fontWeight: '600'
   },
-  checkoutText: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
+  couponLabel: { fontSize: 14, fontWeight: '600' },
+  couponValue: { fontSize: 16, fontWeight: '700' },
+  grandLabel: { fontSize: 16, fontWeight: '700' },
+  grandValue: { fontSize: 20, fontWeight: '800' },
 });
 
-export default CartScreen;
+export default CartPage;

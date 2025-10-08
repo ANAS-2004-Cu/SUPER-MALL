@@ -92,12 +92,13 @@ const Register = () => {
       };
 
       const result = await signUp(email, password, userData);
-      await AsyncStorage.setItem('UserObject', JSON.stringify(await getUserData(result.user.uid)));
-
       if (result.success) {
-        showAlert("User created successfully", "success");
-        router.replace('/(tabs)');
-        router.push('/home');
+        await AsyncStorage.setItem('UserObject', JSON.stringify(await getUserData(result.user.uid)));
+        if (result.verificationSent) {
+          showAlert("Verification email sent. Please check your inbox (and spam).", "success");
+        } else {
+          showAlert("Account created. Failed to send verification email, try resend later.", "error");
+        }
       } else {
         if (result.error.includes("email-already-in-use")) {
           showAlert("This email already exists", "error");

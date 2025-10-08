@@ -122,6 +122,17 @@ const Profile = () => {
         </TouchableOpacity>
       </View>
 
+      {/* Login button shown only when not logged in */}
+      {!isLoggedIn && (
+        <TouchableOpacity
+          style={[styles.loginButton, theme.signoutButton]}
+          onPress={() => router.push("/Authentication/Login")}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.signoutText, theme.signoutText]}>Login</Text>
+        </TouchableOpacity>
+      )}
+
       <TouchableOpacity
         style={[styles.profiletabs, theme.profiletabs]}
         onPress={() => handleAuthenticatedAction(() => router.push("/orders"))}
@@ -277,6 +288,16 @@ const styles = StyleSheet.create({
   signoutText: {
     fontSize: 16,
     fontWeight: "bold",
+  },
+  loginButton: {
+    width: "90%",
+    height: 50,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 0,
+    marginBottom: 15,
+    borderWidth: 1,
   },
 });
 

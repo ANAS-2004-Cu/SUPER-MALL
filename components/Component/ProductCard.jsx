@@ -3,11 +3,21 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from "react";
 import { AppState, Dimensions, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Icon from "react-native-vector-icons/Feather";
-import { createDocument, deleteDocument, getCollection, getDocument, updateDocument } from '../../Firebase/Firebase';
+import FAIcon from 'react-native-vector-icons/FontAwesome'; // added
+import { getDocument, getUserCart, removeCartItem, updateCartItemQuantity, updateDocument } from '../../Firebase/Firebase';
 import { darkTheme, lightTheme } from '../../Theme/Component/ProductCardTheme';
 
 const { width } = Dimensions.get('window');
 const cardWidth = (width / 2) - 24;
+
+const getMaxAllowedForProduct = (product = {}) => {
+  const stock = Number(product.stockQuantity);
+  const perOrder = Number(product.AvilableQuantityBerOeder);
+  const validStock = !isNaN(stock) && stock > 0 ? stock : Infinity;
+  const validPerOrder = !isNaN(perOrder) && perOrder > 0 ? perOrder : Infinity;
+  const maxAllowed = Math.min(validStock, validPerOrder);
+  return maxAllowed === Infinity ? (isNaN(stock) ? 9999 : stock) : maxAllowed;
+};
 
 const ProductCard = ({
   item,
@@ -88,7 +98,7 @@ const ProductCard = ({
   // Fetch cart and favorites data when user changes
   useEffect(() => {
     if (currentUser) {
-      fetchCartItems();
+      fetchUserCart();
       fetchUserFavorites();
     } else {
       setCartItems([]);
@@ -110,14 +120,12 @@ const ProductCard = ({
     }
   };
 
-  const fetchCartItems = async () => {
+  const fetchUserCart = async () => {
     if (!currentUser) return;
     try {
-      const result = await getCollection(`Users/${currentUser.uid}/cart`);
-      if (result.success) {
-        setCartItems(result.data);
-      }
-    } catch (error) {
+      const arr = await getUserCart(currentUser.uid);
+      setCartItems(arr);
+    } catch {
       setCartItems([]);
     }
   };
@@ -142,36 +150,23 @@ const ProductCard = ({
     }
 
     try {
-      const cartResult = await getCollection(`Users/${currentUser.uid}/cart`);
-      const existingItem = cartResult.success ? cartResult.data.find(cartItem => cartItem.productId === item.id) : null;
-
-      if (existingItem) {
-        // Check if adding one more would exceed stock quantity
-        if (item.stockQuantity !== undefined && existingItem.quantity + 1 > item.stockQuantity) {
-          return onShowAlert(`Sorry, only ${item.stockQuantity} items available in stock`, 'error');
+      const existingQty = getCartQuantity(item.id);
+      const newQty = existingQty > 0 ? existingQty + 1 : 1;
+      const maxAllowed = getMaxAllowedForProduct(item);
+      if (newQty > maxAllowed) {
+        if (!isNaN(Number(item.AvilableQuantityBerOeder))) {
+          onShowAlert(`Max per order is ${item.AvilableQuantityBerOeder}`, 'error');
+        } else if (!isNaN(Number(item.stockQuantity))) {
+          onShowAlert(`Only ${item.stockQuantity} in stock`, 'error');
+        } else {
+          onShowAlert('Cannot increase quantity', 'error');
         }
-        
-        await updateDocument(`Users/${currentUser.uid}/cart`, existingItem.id, {
-          quantity: existingItem.quantity + 1,
-          updatedAt: new Date(),
-        });
-      } else {
-        await createDocument(`Users/${currentUser.uid}/cart`, {
-          productId: item.id,
-          name: item.name,
-          price: item.price,
-          image: item.image,
-          discount: item.discount || 0,
-          quantity: 1,
-          description: item.description || '',
-          category: item.category || 'Uncategorized',
-          createdAt: new Date(),
-        });
+        return;
       }
-
-      fetchCartItems();
+      await updateCartItemQuantity(currentUser.uid, item.id, newQty);
+      await fetchUserCart();
       onShowAlert(`${item.name.split(' ').slice(0, 2).join(' ')} Added to cart`);
-    } catch (error) {
+    } catch {
       onShowAlert('Failed to add product to cart', 'error');
     }
   };
@@ -180,26 +175,34 @@ const ProductCard = ({
   const updateCartQuantity = async (newQuantity) => {
     if (!currentUser) return;
 
-    try {
-      const cartItem = cartItems.find(cartItem => cartItem.productId === item.id);
-      if (!cartItem) return;
-
-      // Check if the new quantity would exceed stock
-      if (item.stockQuantity !== undefined && newQuantity > item.stockQuantity) {
-        return onShowAlert(`Sorry, only ${item.stockQuantity} items available in stock`, 'error');
+    // If user decremented from 1 to 0 => remove item
+    if (newQuantity < 1) {
+      try {
+        await removeCartItem(currentUser.uid, item.id);
+        await fetchUserCart();
+        onShowAlert('Removed from cart');
+      } catch {
+        onShowAlert('Failed to remove item', 'error');
       }
+      return;
+    }
 
-      if (newQuantity <= 0) {
-        await deleteDocument(`Users/${currentUser.uid}/cart`, cartItem.id);
+    const maxAllowed = getMaxAllowedForProduct(item);
+    if (newQuantity > maxAllowed) {
+      if (!isNaN(Number(item.AvilableQuantityBerOeder)) && maxAllowed === Number(item.AvilableQuantityBerOeder)) {
+        onShowAlert(`Max per order is ${item.AvilableQuantityBerOeder}`, 'error');
+      } else if (!isNaN(Number(item.stockQuantity))) {
+        onShowAlert(`Only ${item.stockQuantity} in stock`, 'error');
       } else {
-        await updateDocument(`Users/${currentUser.uid}/cart`, cartItem.id, {
-          quantity: newQuantity,
-          updatedAt: new Date(),
-        });
+        onShowAlert('Cannot increase quantity', 'error');
       }
+      return;
+    }
 
-      fetchCartItems();
-    } catch (error) {
+    try {
+      await updateCartItemQuantity(currentUser.uid, item.id, newQuantity);
+      await fetchUserCart();
+    } catch {
       onShowAlert('Failed to update cart', 'error');
     }
   };
@@ -233,7 +236,7 @@ const ProductCard = ({
   };
 
   const getCartQuantity = (productId) => {
-    const cartItem = cartItems.find(item => item.productId === productId);
+    const cartItem = cartItems.find(c => c.productId === productId);
     return cartItem ? cartItem.quantity : 0;
   };
 
@@ -244,6 +247,8 @@ const ProductCard = ({
   // Cart button display
   const renderCartButton = () => {
     const quantity = getCartQuantity(item.id);
+    const maxAllowed = getMaxAllowedForProduct(item);
+    const disablePlus = quantity >= maxAllowed;
 
     // If out of stock, show out of stock message
     if (!isInStock) {
@@ -258,7 +263,8 @@ const ProductCard = ({
       return (
         <View style={styles(theme).bottomButtonContainer}>
           <TouchableOpacity
-            style={styles(theme).quantityButton}
+            style={[styles(theme).quantityButton, quantity === 1 && { opacity: 0.7 }]}
+            // no disabled: allow removal when quantity === 1
             onPress={(e) => {
               e.stopPropagation();
               updateCartQuantity(quantity - 1);
@@ -268,7 +274,8 @@ const ProductCard = ({
           </TouchableOpacity>
           <Text style={styles(theme).quantityText}>{quantity}</Text>
           <TouchableOpacity
-            style={styles(theme).quantityButton}
+            style={[styles(theme).quantityButton, disablePlus && { opacity: 0.4 }]}
+            disabled={disablePlus}
             onPress={(e) => {
               e.stopPropagation();
               updateCartQuantity(quantity + 1);
@@ -360,11 +367,10 @@ const ProductCard = ({
             toggleFavorite();
           }}
         >
-          <Icon
+          <FAIcon
             name="heart"
-            size={20}
-            color={isFavorite(item.id) ? theme.favoriteIconActiveColor : theme.favoriteIconInactiveColor}
-            fill={isFavorite(item.id) ? theme.favoriteIconActiveColor : "transparent"}
+            size={22}
+            color={isFavorite(item.id) ? '#e53935' : '#d1d1d1'}
           />
         </TouchableOpacity>
 

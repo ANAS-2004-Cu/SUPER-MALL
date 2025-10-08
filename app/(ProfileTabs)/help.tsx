@@ -73,6 +73,7 @@ const Help = () => {
   const helpTopics = [
     { icon: 'person-outline', title: 'Account Information', subtitle: 'Manage your account, Update Data', route: './editprofile' },
     { icon: 'key-outline', title: 'Password & Login Issues', subtitle: 'Reset & Update Password', route: '../Authentication/ForgetPass' },
+    { icon: 'mail-outline', title: 'Change Email Address', subtitle: 'Update your account email', route: '../Authentication/ChangeEmail' },
     { icon: 'location-outline', title: 'Address', subtitle: 'Manage your saved addresses', route: './address' },
     { icon: 'cube-outline', title: 'Orders & Tracking', subtitle: 'Track your order, shipping updates', route: './orders' }
   ];
