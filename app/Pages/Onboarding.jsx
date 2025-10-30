@@ -1,33 +1,32 @@
-import { StyleSheet, Text, View, Image, TouchableOpacity, FlatList, Dimensions, SafeAreaView, Animated } from 'react-native';
-import React, { useState, useRef, useEffect } from 'react';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, Dimensions, FlatList, Image, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 const { width, height } = Dimensions.get('window');
 
 const slides = [
   {
     id: '1',
-    image: require('../assets/images/welcom.png'),
+    image: require('../../assets/images/welcom.png'),
     title: 'Welcome to our store',
     subtitle: 'The best products at the best prices found here',
   },
   {
     id: '2',
-    image: require('../assets/images/easy.png'),
+    image: require('../../assets/images/easy.png'),
     title: 'Shop with ease',
     subtitle: 'Discover thousands of products in one place and order with just a click',
   },
   {
     id: '3',
-    image: require('../assets/images/delivery.png'),
+    image: require('../../assets/images/delivery.png'),
     title: 'Fast delivery',
     subtitle: 'We deliver your order quickly and safely to your doorstep',
   },
   {
     id: '4',
-    image: require('../assets/images/payment.png'),
+    image: require('../../assets/images/payment.png'),
     title: 'Secure payment',
     subtitle: 'Various and secure payment options for your convenience',
   },
@@ -100,18 +99,13 @@ const Onboarding = () => {
   };
 
   const handleDone = async () => {
-    try {
-      await AsyncStorage.setItem('@onboarding_complete', 'true');
-      if (fromRegister && userId) {
-        router.push({
-          pathname: '/CategorySelection',
-          params: { userId },
-        });
-      } else {
-        router.replace('/Login');
-      }
-    } catch (error) {
-      console.error('Error saving onboarding status:', error);
+    if (fromRegister && userId) {
+      router.push({
+        pathname: '/CategorySelection',
+        params: { userId },
+      });
+    } else {
+      router.replace('/Login');
     }
   };
 

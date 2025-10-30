@@ -2,7 +2,6 @@ import * as NavigationBar from 'expo-navigation-bar';
 import { Stack } from 'expo-router';
 import React, { useEffect } from 'react';
 import { Platform } from 'react-native';
-import { CartProvider } from './item/CartContext';
 
 const Layout = () => {
   useEffect(() => {
@@ -15,7 +14,6 @@ const Layout = () => {
   }, []);
 
   return (
-    <CartProvider>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="Authentication/Login" />
@@ -32,7 +30,6 @@ const Layout = () => {
         <Stack.Screen name="Settings" />
         <Stack.Screen name="singlepage" />
       </Stack>
-    </CartProvider>
   );
 };
 

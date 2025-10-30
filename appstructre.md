@@ -37,10 +37,10 @@
         └── 📁Pages
             ├── ad-detail.jsx
             ├── singlepage.jsx
+            ├── CategorySelection.jsx
+            ├── Onboarding.jsx
         ├── _layout.tsx
-        ├── CategorySelection.jsx
         ├── index.jsx
-        ├── Onboarding.jsx
     └── 📁assets
         └── 📁fonts
             ├── SpaceMono-Regular.ttf

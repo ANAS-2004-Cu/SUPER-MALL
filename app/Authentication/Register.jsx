@@ -99,6 +99,14 @@ const Register = () => {
         } else {
           showAlert("Account created. Failed to send verification email, try resend later.", "error");
         }
+
+        // Navigate to Onboarding -> CategorySelection after showing the alert
+        setTimeout(() => {
+          router.replace({
+            pathname: '/Onboarding',
+            params: { fromRegister: 'true', userId: result.user.uid },
+          });
+        }, 1200);
       } else {
         if (result.error.includes("email-already-in-use")) {
           showAlert("This email already exists", "error");
