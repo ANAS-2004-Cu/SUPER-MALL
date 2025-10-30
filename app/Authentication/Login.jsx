@@ -58,9 +58,9 @@ const Login = () => {
     if (userData?.preferredCategories && userData.preferredCategories.length > 0) {
       await AsyncStorage.setItem('categories', JSON.stringify(userData.preferredCategories));
     }
-    // Sync AvilableCategory from ProductsManage collection
+    // Sync AvilableCategory from Manage collection
     try {
-      const response = await getCollection("ProductsManage");
+      const response = await getCollection("Manage");
       if (response.success && Array.isArray(response.data) && response.data.length > 0) {
         const doc = response.data[0];
         const rawCats =

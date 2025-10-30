@@ -13,7 +13,7 @@ import {
     View
 } from "react-native";
 import Icon from "react-native-vector-icons/Feather";
-import { darkTheme, lightTheme } from '../../Theme/Tabs/HomeTheme';
+import { darkTheme, lightTheme } from '../../Theme/Pages/AdDetailTheme';
 
 const AdDetailScreen = () => {
     const { image, content } = useLocalSearchParams();
@@ -82,7 +82,7 @@ const AdDetailScreen = () => {
     const imageHeight = windowWidth / imageAspectRatio;
 
     // Get the appropriate back button color based on theme - inverted for contrast
-    const backButtonColor = theme === darkTheme ? '#FFFFFF' : '#000000';
+    const backButtonColor = theme.isDark ? '#FFFFFF' : '#000000';
 
     return (
         <>

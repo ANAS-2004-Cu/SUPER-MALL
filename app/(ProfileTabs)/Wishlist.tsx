@@ -144,7 +144,7 @@ const Wishlist = () => {
     <TouchableOpacity
       style={theme.styles.productCard}
       activeOpacity={0.8}
-      onPress={() => router.push({ pathname: '/singlepage', params: { id: item.id } })}
+      onPress={() => router.push({ pathname: './Pages/singlepage', params: { id: item.id } })}
     >
       <View style={theme.styles.productContent}>
         <View style={theme.styles.imageContainer}>

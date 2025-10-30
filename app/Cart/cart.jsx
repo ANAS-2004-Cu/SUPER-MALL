@@ -1,11 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Stack, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
-import MiniAlert from '../components/Component/MiniAlert';
-import { auth, clearUserCart, getDocument, getUserCart, removeCartItem, updateCartItemQuantity } from '../Firebase/Firebase';
-import { darkTheme, lightTheme } from '../Theme/Tabs/HomeTheme';
+import MiniAlert from '../../components/Component/MiniAlert';
+import { auth, clearUserCart, getDocument, getUserCart, removeCartItem, updateCartItemQuantity } from '../../Firebase/Firebase';
+import { cartDarkTheme, cartLightTheme } from '../../Theme/Cart/cartTheme';
 
 const computeProductPricing = (product = {}) => {
   const base = Number(product.price) || 0;
@@ -44,17 +44,13 @@ const getMaxAllowedForProduct = (product = {}) => {
 
 const CartPage = () => {
   const router = useRouter();
-  const [theme, setTheme] = useState(lightTheme);
+  const [theme, setTheme] = useState(cartLightTheme);
   const [cartItems, setCartItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [alertMsg, setAlertMsg] = useState(null);
   const [alertType, setAlertType] = useState('success');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [fetchingProducts, setFetchingProducts] = useState(false);
-  const [couponCode, setCouponCode] = useState('');
-  const [couponDiscount, setCouponDiscount] = useState(0); // percent
-  const [couponApplied, setCouponApplied] = useState(false);
-  const [couponError, setCouponError] = useState(null);
 
   const showAlert = (msg, type = 'success') => {
     setAlertMsg(msg);
@@ -65,7 +61,7 @@ const CartPage = () => {
   const loadTheme = useCallback(async () => {
     try {
       const mode = await AsyncStorage.getItem('ThemeMode');
-      setTheme(mode === '2' ? darkTheme : lightTheme);
+      setTheme(mode === '2' ? cartDarkTheme : cartLightTheme);
     } catch {}
   }, []);
 
@@ -123,6 +119,16 @@ const CartPage = () => {
       setLoading(false);
     }
   }, []);
+
+  // Persist enriched cart snapshot for Checkout/Card/Wallet screens
+  useEffect(() => {
+    const persist = async () => {
+      try {
+        await AsyncStorage.setItem('UserCart', JSON.stringify(cartItems || []));
+      } catch {}
+    };
+    persist();
+  }, [cartItems]);
 
   useEffect(() => {
     loadTheme();
@@ -187,58 +193,19 @@ const CartPage = () => {
         onPress: async () => {
           setCartItems([]);
           await clearUserCart(auth.currentUser?.uid);
+          // AsyncStorage will be updated by the cartItems effect
           showAlert('Cart cleared', 'success');
         }
       }
     ]);
   };
 
-  const subtotalData = cartItems.reduce((acc, it) => {
-    const { base, discounted } = computeProductPricing(it.product);
-    const qty = Number(it.quantity) || 1;
-    acc.discounted += discounted * qty;
-    acc.original += base * qty;
-    return acc;
-  }, { discounted: 0, original: 0 });
-
-  const subtotal = subtotalData.discounted;
-  const totalSavings = subtotalData.original - subtotal;
   const totalItems = cartItems.reduce((s, it) => s + (Number(it.quantity) || 1), 0);
-
-  const validCoupons = {
-    SAVE10: 10,
-    SAVE15: 15,
-    SAVE20: 20,
-    WELCOME5: 5
-  };
-
-  const applyCoupon = () => {
-    const code = couponCode.trim().toUpperCase();
-    if (!code) {
-      setCouponError('Enter a coupon code');
-      return;
-    }
-    if (!validCoupons[code]) {
-      setCouponError('Invalid coupon');
-      setCouponDiscount(0);
-      setCouponApplied(false);
-      return;
-    }
-    setCouponDiscount(validCoupons[code]);
-    setCouponApplied(true);
-    setCouponError(null);
-    showAlert(`Coupon ${code} applied`);
-  };
-
-  const removeCoupon = () => {
-    setCouponCode('');
-    setCouponDiscount(0);
-    setCouponApplied(false);
-    setCouponError(null);
-  };
-
-  const couponValue = (subtotal * couponDiscount) / 100;
-  const grandTotal = subtotal - couponValue;
+  const grandTotal = cartItems.reduce((sum, it) => {
+    const { discounted } = computeProductPricing(it.product);
+    const qty = Number(it.quantity) || 1;
+    return sum + discounted * qty;
+  }, 0);
 
   const formatPrice = (n) => '$' + (n || 0).toFixed(2);
 
@@ -251,7 +218,7 @@ const CartPage = () => {
       showAlert('Cart is empty', 'error');
       return;
     }
-    router.push('/Pages/checkout');
+    router.push('./checkout');
   };
 
   const renderItem = ({ item }) => {
@@ -268,14 +235,14 @@ const CartPage = () => {
         <View style={{ position: 'relative' }}>
           <TouchableOpacity
             style={styles.imageWrapper}
-            onPress={() => router.push({ pathname: '/singlepage', params: { id: item.productId } })}
+            onPress={() => router.push({ pathname: '/Pages/singlepage', params: { id: item.productId } })}
           >
             {p.image ? (
               <Image
                 source={{ uri: p.image }}
                 style={styles.itemImage}
                 resizeMode="cover"
-                defaultSource={require('../assets/images/loading-buffering.gif')}
+                defaultSource={require('../../assets/images/loading-buffering.gif')}
               />
             ) : (
               <View style={[styles.itemImage, { justifyContent: 'center', alignItems: 'center' }]}>
@@ -381,48 +348,6 @@ const CartPage = () => {
               showsVerticalScrollIndicator={false}
             />
             <View style={[styles.footer, { backgroundColor: theme.cardBackground, shadowColor: theme.searchBarShadow }]}>
-              <View style={styles.couponRow}>
-                <TextInput
-                  style={[styles.couponInput, { borderColor: theme.inputPlaceholder, color: theme.text }]}
-                  placeholder="Coupon code"
-                  placeholderTextColor={theme.inputPlaceholder}
-                  value={couponCode}
-                  onChangeText={(t) => { setCouponCode(t); setCouponError(null); }}
-                  editable={!couponApplied}
-                  autoCapitalize="characters"
-                />
-                {couponApplied ? (
-                  <TouchableOpacity onPress={removeCoupon} style={[styles.couponBtn, { backgroundColor: '#b71c1c' }]}>
-                    <Text style={styles.couponBtnText}>Remove</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity onPress={applyCoupon} style={[styles.couponBtn, { backgroundColor: theme.accentColor }]}>
-                    <Text style={styles.couponBtnText}>Apply</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-              {couponError && <Text style={[styles.couponError, { color: theme.errorText || '#e53935' }]}>{couponError}</Text>}
-              {couponApplied && (
-                <Text style={[styles.couponApplied, { color: theme.successText || '#2e7d32' }]}>
-                  Coupon {couponCode.trim().toUpperCase()} (-{couponDiscount}%)
-                </Text>
-              )}
-              <View style={styles.totalRow}>
-                <Text style={[styles.totalLabel, { color: theme.text }]}>Subtotal</Text>
-                <Text style={[styles.totalValue, { color: theme.accentColor }]}>{formatPrice(subtotal)}</Text>
-              </View>
-              {totalSavings > 0 && (
-                <View style={styles.totalRow}>
-                  <Text style={[styles.savingsLabel, { color: theme.successText || '#2e7d32' }]}>Savings</Text>
-                  <Text style={[styles.savingsValue, { color: theme.successText || '#2e7d32' }]}>-{formatPrice(totalSavings)}</Text>
-                </View>
-              )}
-              {couponApplied && (
-                <View style={styles.totalRow}>
-                  <Text style={[styles.couponLabel, { color: theme.accentColor }]}>Coupon Discount</Text>
-                  <Text style={[styles.couponValue, { color: theme.accentColor }]}>-{formatPrice(couponValue)}</Text>
-                </View>
-              )}
               <View style={[styles.totalRow, { marginTop: 4 }]}>
                 <Text style={[styles.grandLabel, { color: theme.text }]}>Total</Text>
                 <Text style={[styles.grandValue, { color: theme.accentColor }]}>{formatPrice(grandTotal)}</Text>
@@ -521,45 +446,6 @@ const styles = StyleSheet.create({
     borderRadius: 30
   },
   checkoutText: { color: '#fff', fontWeight: '700', fontSize: 15, marginRight: 8 },
-  couponRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12
-  },
-  couponInput: {
-    flex: 1,
-    height: 44,
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    fontSize: 14
-  },
-  couponBtn: {
-    marginLeft: 10,
-    paddingHorizontal: 16,
-    height: 44,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  couponBtnText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 13
-  },
-  couponError: {
-    fontSize: 12,
-    marginTop: -6,
-    marginBottom: 8
-  },
-  couponApplied: {
-    fontSize: 12,
-    marginTop: -6,
-    marginBottom: 8,
-    fontWeight: '600'
-  },
-  couponLabel: { fontSize: 14, fontWeight: '600' },
-  couponValue: { fontSize: 16, fontWeight: '700' },
   grandLabel: { fontSize: 16, fontWeight: '700' },
   grandValue: { fontSize: 20, fontWeight: '800' },
 });

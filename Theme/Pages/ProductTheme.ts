@@ -1,0 +1,31 @@
+export const lightTheme = {
+  background: '#ffffff',
+  cardBackground: '#ffffff',
+  accent: '#f5e1d7',
+  textPrimary: '#333333',
+  textSecondary: '#777777',
+  price: '#333333',
+  priceAfter: '#2E7D32',
+  discountBadgeBg: '#ffe9e0',
+  discountBadgeText: '#d84315',
+  sectionBg: '#f9f9f9',
+  divider: '#f0f0f0',
+  backButtonColor: '#5D4037',
+  heartBg: '#FAE5D3',
+};
+
+export const darkTheme = {
+  background: '#121212',
+  cardBackground: '#1E1E1E',
+  accent: '#2D1E10',
+  textPrimary: '#E0C9A6',
+  textSecondary: '#B39169',
+  price: '#E0C9A6',
+  priceAfter: '#9CCC65',
+  discountBadgeBg: '#3a2a20',
+  discountBadgeText: '#f7cfae',
+  sectionBg: '#1A1A1A',
+  divider: '#2A2A2A',
+  backButtonColor: '#E0C9A6',
+  heartBg: '#2a1f18',
+};

@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, AppState, Dimensions, FlatList, Image, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import { ActivityIndicator, AppState, FlatList, Image, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import Icon from "react-native-vector-icons/Feather";
 import MiniAlert from '../../components/Component/MiniAlert';
 import ProductCard from '../../components/Component/ProductCard';
@@ -44,7 +44,6 @@ const HomePage = () => {
   const [adBanners, setAdBanners] = useState([]);
   const bannerRef = useRef(null);
   const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
-  const windowWidth = Dimensions.get('window').width;
   const dimensions = useWindowDimensions();
   const BANNER_WIDTH = dimensions.width - 40; // Added constant for consistent banner width
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -98,7 +97,7 @@ const HomePage = () => {
         showAlert("Please login to access your cart", 'error');
         return;
       }
-      router.push("/cart");
+      router.push("../Cart/cart");
     } catch {
       showAlert("Please login to access your cart", 'error');
     }
@@ -270,7 +269,7 @@ const HomePage = () => {
 
   const fetchProductsManage = useCallback(async () => {
     try {
-      const response = await getCollection("ProductsManage");
+      const response = await getCollection("Manage");
       if (response.success && Array.isArray(response.data) && response.data.length > 0) {
         const doc = response.data[0];
         setTopSellingIds(Array.isArray(doc.TopSelling) ? doc.TopSelling : []);
@@ -356,7 +355,7 @@ const HomePage = () => {
           checkLoginStatus()
         ].map(p => p.catch ? p : Promise.resolve()));
 
-        // ensure ProductsManage is fetched and stored before reloading categories from storage
+        // ensure Manage is fetched and stored before reloading categories from storage
         await fetchProductsManage();
         await loadAvailableCategoriesFromStorage();
         await loadCartCount();
@@ -438,7 +437,7 @@ const HomePage = () => {
       case "navigate":
         if (item.id) {
           router.push({
-            pathname: "../singlepage",
+            pathname: "../Pages/singlepage",
             params: { id: item.id }
           });
         }

@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import MiniAlert from '../components/Component/MiniAlert';
+import { getAvailableRegions } from '../Firebase/Firebase';
 import { darkTheme, lightTheme } from '../Theme/Modal/AddressModalTheme';
 
 interface Address {
@@ -19,7 +20,7 @@ interface Address {
 interface AddressModalProps {
     visible: boolean;
     onClose: () => void;
-    onSubmit: (formData: Address) => Promise<void>;
+    onSubmit?: (formData: Address) => Promise<void>; // made optional
     currentAddress: Address | null;
     isEditing: boolean;
     loading: boolean;
@@ -47,6 +48,9 @@ const AddressModal: React.FC<AddressModalProps> = ({
     const [alertType, setAlertType] = useState<'success' | 'error'>('error');
     const [currentTheme, setCurrentTheme] = useState(lightTheme);
 
+    const [cityOptions, setCityOptions] = useState<string[]>(['cairo', 'giza', 'tnta', 'gharbia']);
+    const [showCityModal, setShowCityModal] = useState(false);
+
     useEffect(() => {
         const getThemeMode = async () => {
             try {
@@ -57,6 +61,19 @@ const AddressModal: React.FC<AddressModalProps> = ({
             }
         };
         getThemeMode();
+
+        const loadRegions = async () => {
+            try {
+                if (!visible) return;
+                const regions = await getAvailableRegions();
+                if (Array.isArray(regions) && regions.length) {
+                    setCityOptions(regions);
+                }
+            } catch {
+                // silently keep defaults
+            }
+        };
+        loadRegions();
     }, [visible]);
 
     useEffect(() => {
@@ -75,6 +92,7 @@ const AddressModal: React.FC<AddressModalProps> = ({
             });
         }
         setAlertMsg(null);
+        setShowCityModal(false); // close city modal on open/reset
     }, [currentAddress, visible]);
 
     const handleFormChange = (field: keyof Address, value: string | boolean) => {
@@ -119,7 +137,16 @@ const AddressModal: React.FC<AddressModalProps> = ({
     const handleSubmit = async () => {
         if (!validateForm()) return;
         try {
-            await onSubmit(formData);
+            if (onSubmit) {
+                await onSubmit(formData);
+            } else {
+                const { addUserAddress, updateUserAddress } = await import('../Firebase/Firebase');
+                const res = isEditing ? await updateUserAddress(formData) : await addUserAddress(formData);
+                if (!res?.success) {
+                    throw new Error('error' in res ? res.error : 'Failed');
+                }
+                onClose?.();
+            }
         } catch {
             setAlertMsg('Failed to save address. Please try again.');
             setAlertType('error');
@@ -225,6 +252,38 @@ const AddressModal: React.FC<AddressModalProps> = ({
             color: currentTheme.requiredMarkColor,
             fontSize: 16,
         },
+        cityModalOverlay: {
+            flex: 1,
+            justifyContent: 'center',
+            alignItems: 'center',
+            backgroundColor: 'rgba(0,0,0,0.4)',
+        },
+        cityModalContent: {
+            width: '80%',
+            borderRadius: 12,
+            padding: 16,
+        },
+        cityModalTitle: {
+            fontSize: 16,
+            fontWeight: '600',
+            marginBottom: 8,
+        },
+        cityOption: {
+            paddingVertical: 12,
+            borderBottomWidth: 1,
+            borderBottomColor: currentTheme.inputBorderColor,
+        },
+        cityOptionText: {
+            fontSize: 16,
+        },
+        cityCancelBtn: {
+            paddingVertical: 12,
+            alignItems: 'center',
+        },
+        cityCancelText: {
+            fontSize: 16,
+            fontWeight: '600',
+        },
     });
 
     return (
@@ -279,13 +338,15 @@ const AddressModal: React.FC<AddressModalProps> = ({
                         <View style={styles.formRow}>
                             <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
                                 <Text style={styles.formLabel}>City <Text style={styles.requiredMark}>*</Text></Text>
-                                <TextInput
+                                <TouchableOpacity
                                     style={styles.formInput}
-                                    value={formData.City}
-                                    onChangeText={text => handleFormChange('City', text)}
-                                    placeholder="City"
-                                    placeholderTextColor={currentTheme.titleColor + '80'}
-                                />
+                                    onPress={() => setShowCityModal(true)}
+                                    activeOpacity={0.7}
+                                >
+                                    <Text style={{ color: currentTheme.titleColor }}>
+                                        {formData.City ? formData.City : 'Select city'}
+                                    </Text>
+                                </TouchableOpacity>
                             </View>
                             <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
                                 <Text style={styles.formLabel}>State <Text style={styles.requiredMark}>*</Text></Text>
@@ -330,6 +391,37 @@ const AddressModal: React.FC<AddressModalProps> = ({
                             </View>
                         )}
                     </ScrollView>
+
+                    <Modal
+                        visible={showCityModal}
+                        transparent
+                        animationType="fade"
+                        onRequestClose={() => setShowCityModal(false)}
+                    >
+                        <View style={styles.cityModalOverlay}>
+                            <View style={[styles.cityModalContent, { backgroundColor: currentTheme.modalBackground }]}>
+                                <Text style={[styles.cityModalTitle, { color: currentTheme.titleColor }]}>Select City</Text>
+                                {cityOptions.map((opt) => (
+                                    <TouchableOpacity
+                                        key={opt}
+                                        style={styles.cityOption}
+                                        onPress={() => {
+                                            handleFormChange('City', opt);
+                                            setShowCityModal(false);
+                                        }}
+                                    >
+                                        <Text style={[styles.cityOptionText, { color: currentTheme.titleColor }]}>
+                                            {opt}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                                <TouchableOpacity style={styles.cityCancelBtn} onPress={() => setShowCityModal(false)}>
+                                    <Text style={[styles.cityCancelText, { color: currentTheme.titleColor }]}>Cancel</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    </Modal>
+
                     <TouchableOpacity
                         style={styles.submitButton}
                         onPress={handleSubmit}

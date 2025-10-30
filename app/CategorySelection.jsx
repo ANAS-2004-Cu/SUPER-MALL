@@ -4,7 +4,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { db } from '../Firebase/Firebase';
 import { doc, updateDoc } from 'firebase/firestore';
-import ModernAlert from '../components/ModernAlert';
+import ModernAlert from '../components/Component/ModernAlert';
 
 const { width } = Dimensions.get('window');
 const cardWidth = width / 2 - 20;

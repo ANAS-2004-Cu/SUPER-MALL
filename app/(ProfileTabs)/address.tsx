@@ -4,7 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { auth, getDocument, updateDocument } from '../../Firebase/Firebase';
+import { addUserAddress, auth as fbAuth, getUserAddresses as fbGetUserAddresses, updateUserAddress, updateUserAddresses } from '../../Firebase/Firebase';
 import AddressModal from '../../Modal/AddressModal';
 import DeleteModal from '../../Modal/DeleteModal';
 import { darkTheme, lightTheme } from '../../Theme/ProfileTabs/AddressTheme';
@@ -122,22 +122,6 @@ const Address = () => {
     setAlertType(type);
   };
 
-  const getUserAddresses = async () => {
-    const userId = auth.currentUser?.uid;
-    if (!userId) return null;
-
-    const userResult = await getDocument("Users", userId);
-    return userResult.success ? (userResult.data as any)?.Address || [] : null;
-  };
-
-  const updateUserAddresses = async (newAddresses: any[]) => {
-    const userId = auth.currentUser?.uid;
-    if (!userId) return false;
-
-    const updateResult = await updateDocument("Users", userId, { Address: newAddresses });
-    return updateResult.success;
-  };
-
   const formatAddresses = (userAddresses: any[]) => {
     return userAddresses
       .map((address: any, index: number) => ({
@@ -156,15 +140,14 @@ const Address = () => {
   const fetchUserAddresses = async () => {
     try {
       setLoading(true);
-      const userAddresses = await getUserAddresses();
-
-      if (!userAddresses) {
+      const uid = fbAuth.currentUser?.uid;
+      if (!uid) {
         setLoading(false);
         setRefreshing(false);
         return;
       }
-
-      const formattedAddresses = formatAddresses(userAddresses);
+      const userAddresses = await fbGetUserAddresses(uid);
+      const formattedAddresses = formatAddresses(userAddresses || []);
       setAddresses(formattedAddresses);
     } catch (error) {
       showAlert("Failed to load addresses. Please try again.", 'error');
@@ -197,10 +180,12 @@ const Address = () => {
     setDeleteLoading(true);
     const success = await performAddressOperation(
       async () => {
-        const userAddresses = await getUserAddresses();
-        if (!userAddresses) return false;
-        const filteredAddresses = userAddresses.filter((addr: any) => addr.id !== selectedAddressId);
-        return await updateUserAddresses(filteredAddresses);
+        const uid = fbAuth.currentUser?.uid;
+        if (!uid) return false;
+        const userAddresses = await fbGetUserAddresses(uid);
+        const filteredAddresses = (userAddresses || []).filter((addr: any) => addr.id !== selectedAddressId);
+        const res = await updateUserAddresses(uid, filteredAddresses);
+        return res.success;
       },
       "Address deleted successfully"
     );
@@ -213,7 +198,10 @@ const Address = () => {
   };
 
   const handleSetDefault = async (id: string) => {
-    const userAddresses = await getUserAddresses();
+    const uid = fbAuth.currentUser?.uid;
+    if (!uid) return;
+
+    const userAddresses = await fbGetUserAddresses(uid);
     if (!userAddresses) return;
 
     const addressToUpdate = userAddresses.find((addr: any) => addr.id === id);
@@ -227,33 +215,17 @@ const Address = () => {
           ...addr,
           isDefault: addr.id === id ? isSettingAsDefault : false
         }));
-        return await updateUserAddresses(updatedAddresses);
+        const res = await updateUserAddresses(uid, updatedAddresses);
+        return res.success;
       },
       isSettingAsDefault ? "Default address updated successfully" : "Default address removed"
     );
   };
 
   const handleSubmitAddress = async (formData: Address) => {
-    const userAddresses = await getUserAddresses();
-    if (!userAddresses) return;
-
     const operation = async () => {
-      let updatedAddresses;
-
-      if (isEditing) {
-        const existingIndex = userAddresses.findIndex((addr: any) => addr.id === formData.id);
-        if (existingIndex === -1) return false;
-
-        updatedAddresses = [...userAddresses];
-        updatedAddresses[existingIndex] = {
-          ...formData,
-          isDefault: userAddresses[existingIndex].isDefault
-        };
-      } else {
-        updatedAddresses = [...userAddresses, { ...formData, isDefault: false }];
-      }
-
-      return await updateUserAddresses(updatedAddresses);
+      const res = isEditing ? await updateUserAddress(formData) : await addUserAddress(formData);
+      return !!res?.success;
     };
 
     const success = await performAddressOperation(

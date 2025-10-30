@@ -1,15 +1,17 @@
+import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useRef } from 'react';
-import { 
-  Animated, 
-  Text, 
-  View, 
-  StyleSheet, 
-  TouchableOpacity, 
+import {
+  Animated,
   Dimensions,
   Modal,
-  Pressable
+  Pressable,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  useColorScheme,
+  View
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { darkAlertTheme, lightAlertTheme } from '../../Theme/Component/AlertTheme';
 
 interface ModernAlertProps {
   visible: boolean;
@@ -21,6 +23,7 @@ interface ModernAlertProps {
   onPrimaryPress?: () => void;
   onSecondaryPress?: () => void;
   onClose: () => void;
+  themeMode?: 'light' | 'dark';
 }
 
 const { width } = Dimensions.get('window');
@@ -34,10 +37,15 @@ const ModernAlert: React.FC<ModernAlertProps> = ({
   secondaryButtonText = 'Cancel',
   onPrimaryPress,
   onSecondaryPress,
-  onClose
+  onClose,
+  themeMode
 }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
+
+  const scheme = useColorScheme();
+  const selected = themeMode ?? scheme ?? 'light';
+  const alertTheme = selected === 'dark' ? darkAlertTheme : lightAlertTheme;
 
   useEffect(() => {
     if (visible) {
@@ -67,38 +75,38 @@ const ModernAlert: React.FC<ModernAlertProps> = ({
     switch (type) {
       case 'success':
         return {
-          backgroundColor: '#f8f2f6',
-          iconColor: '#f7cfae',
+          backgroundColor: alertTheme.bodyBg.success,
+          iconColor: alertTheme.header.success.icon,
           iconName: 'checkmark-circle',
-          headerBgColor: '#f7cfae'
+          headerBgColor: alertTheme.header.success.bg
         };
       case 'error':
         return {
-          backgroundColor: '#fff2f2',
-          iconColor: '#ff4d4f',
+          backgroundColor: alertTheme.bodyBg.error,
+          iconColor: alertTheme.header.error.icon,
           iconName: 'alert-circle',
-          headerBgColor: '#ff4d4f'
+          headerBgColor: alertTheme.header.error.bg
         };
       case 'warning':
         return {
-          backgroundColor: '#fffbe6',
-          iconColor: '#faad14',
+          backgroundColor: alertTheme.bodyBg.warning,
+          iconColor: alertTheme.header.warning.icon,
           iconName: 'warning',
-          headerBgColor: '#faad14'
+          headerBgColor: alertTheme.header.warning.bg
         };
       case 'cart':
         return {
-          backgroundColor: '#f0f7ff',
-          iconColor: '#f7cfae',
+          backgroundColor: alertTheme.bodyBg.cart,
+          iconColor: alertTheme.header.cart.icon,
           iconName: 'cart',
-          headerBgColor: '#f7cfae'
+          headerBgColor: alertTheme.header.cart.bg
         };
       default:
         return {
-          backgroundColor: '#f0f7ff',
-          iconColor: '#1890ff',
+          backgroundColor: alertTheme.bodyBg.info,
+          iconColor: alertTheme.header.info.icon,
           iconName: 'information-circle',
-          headerBgColor: '#1890ff'
+          headerBgColor: alertTheme.header.info.bg
         };
     }
   };
@@ -128,40 +136,49 @@ const ModernAlert: React.FC<ModernAlertProps> = ({
       animationType="none"
       onRequestClose={onClose}
     >
-      <Pressable style={styles.modalOverlay} onPress={onClose}>
+      <Pressable style={[styles.modalOverlay, { backgroundColor: alertTheme.overlay }]} onPress={onClose}>
         <Animated.View
           style={[
             styles.alertContainer,
             {
               opacity: fadeAnim,
-              transform: [{ scale: scaleAnim }]
+              transform: [{ scale: scaleAnim }],
+              backgroundColor: alertTheme.containerBg
             }
           ]}
         >
           <Pressable style={{ width: '100%' }} onPress={(e) => e.stopPropagation()}>
             <View style={[styles.alertHeader, { backgroundColor: alertStyle.headerBgColor }]}>
-              <Ionicons name={alertStyle.iconName as any} size={28} color="#fff" />
-              <Text style={styles.titleText}>{title}</Text>
+              <Ionicons name={alertStyle.iconName as any} size={28} color={alertStyle.iconColor} />
+              <Text style={[styles.titleText, { color: alertTheme.headerText }]}>{title}</Text>
             </View>
             
             <View style={[styles.alertBody, { backgroundColor: alertStyle.backgroundColor }]}>
-              <Text style={styles.messageText}>{message}</Text>
+              <Text style={[styles.messageText, { color: alertTheme.bodyText }]}>{message}</Text>
               
               <View style={styles.buttonsContainer}>
                 {secondaryButtonText && (
                   <TouchableOpacity 
-                    style={[styles.button, styles.secondaryButton]} 
+                    style={[
+                      styles.button,
+                      styles.secondaryButton,
+                      { backgroundColor: alertTheme.button.secondaryBg, borderColor: alertTheme.button.secondaryBorder }
+                    ]} 
                     onPress={handleSecondaryPress}
                   >
-                    <Text style={styles.secondaryButtonText}>{secondaryButtonText}</Text>
+                    <Text style={[styles.secondaryButtonText, { color: alertTheme.button.secondaryText }]}>{secondaryButtonText}</Text>
                   </TouchableOpacity>
                 )}
                 
                 <TouchableOpacity 
-                  style={[styles.button, styles.primaryButton]} 
+                  style={[
+                    styles.button,
+                    styles.primaryButton,
+                    { backgroundColor: alertTheme.button.primaryBg }
+                  ]} 
                   onPress={handlePrimaryPress}
                 >
-                  <Text style={styles.primaryButtonText}>{primaryButtonText}</Text>
+                  <Text style={[styles.primaryButtonText, { color: alertTheme.button.primaryText }]}>{primaryButtonText}</Text>
                 </TouchableOpacity>
               </View>
             </View>

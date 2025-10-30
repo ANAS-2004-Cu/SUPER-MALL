@@ -4,5 +4,51 @@
     "source.organizeImports": "explicit",
     "source.sortMembers": "explicit"
   },
-  "typescript.tsdk": "node_modules\\typescript\\lib"
+  "typescript.tsdk": "node_modules\\typescript\\lib",
+  "folder-color.pathColors": [
+    {
+      "folderPath": "SUPER-MALL\\app\\(ProfileTabs)\\",
+      "color": "foldercolorizer.color_00ccff"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\(tabs)\\",
+      "color": "foldercolorizer.color_00ccff"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\Authentication\\",
+      "color": "foldercolorizer.color_00ccff"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\Cart\\",
+      "color": "foldercolorizer.color_00ccff"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\Pages\\",
+      "color": "foldercolorizer.color_00ccff"
+    },
+    {
+      "folderPath": "SUPER-MALL\\Firebase\\",
+      "color": "foldercolorizer.color_00ccff"
+    },
+    {
+      "folderPath": "SUPER-MALL\\Modal\\",
+      "color": "foldercolorizer.color_00ccff"
+    },
+    {
+      "folderPath": "SUPER-MALL\\Theme\\",
+      "color": "foldercolorizer.color_00ccff"
+    },
+    {
+      "folderPath": "SUPER-MALL\\components\\Component\\",
+      "color": "foldercolorizer.color_00ccff"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\ChatBot\\",
+      "color": "foldercolorizer.color_00ccff"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\index.jsx\\",
+      "color": "foldercolorizer.color_00ccff"
+    }
+  ]
 }

@@ -65,7 +65,7 @@ const FilterModal = ({
     }, [visible, selectedCategory, sortBy, maxPrice, topSelling, newArrival]);
 
     useEffect(() => {
-        getCollection("ProductsManage").then(res => {
+        getCollection("Manage").then(res => {
             if (res.success && Array.isArray(res.data) && res.data.length > 0) {
                 const doc = res.data[0];
                 setTopSellingIds(Array.isArray(doc.TopSelling) ? doc.TopSelling : []);

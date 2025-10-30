@@ -26,13 +26,11 @@ const Layout = () => {
         <Stack.Screen name="About" />
         <Stack.Screen name="products" />
         <Stack.Screen name="Admintabs" />
-        <Stack.Screen name="Search" />
         <Stack.Screen name="cart" />
         <Stack.Screen name="(ProfileTabs)" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="Settings" />
         <Stack.Screen name="singlepage" />
-        <Stack.Screen name="DisplayCategories" />
       </Stack>
     </CartProvider>
   );

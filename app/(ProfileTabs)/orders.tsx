@@ -111,7 +111,7 @@ const Orders = () => {
 
   const navigateToProductDetail = (productId: string) => {
     router.push({
-      pathname: '/singlepage',
+      pathname: '../Pages/singlepage',
       params: { id: productId }
     });
   };

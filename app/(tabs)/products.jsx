@@ -262,7 +262,7 @@ const ProductList = () => {
 
   const fetchProductsManage = async () => {
     try {
-      const response = await getCollection("ProductsManage");
+      const response = await getCollection("Manage");
       if (response.success && Array.isArray(response.data) && response.data.length > 0) {
         const doc = response.data[0];
         const rawCats =

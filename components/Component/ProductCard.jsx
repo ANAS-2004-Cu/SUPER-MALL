@@ -354,7 +354,7 @@ const ProductCard = ({
   return (
     <TouchableOpacity 
       style={styles(theme).cardTouchable}
-      onPress={() => router.push({ pathname: "/singlepage", params: { id: item.id } })}
+      onPress={() => router.push({ pathname: "/Pages/singlepage", params: { id: item.id } })}
     >
       <View style={[
         styles(theme).card,

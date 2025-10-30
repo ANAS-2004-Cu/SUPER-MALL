@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
-import { View, Text, Image, TouchableOpacity, Modal, Pressable, StyleSheet, ActivityIndicator, Dimensions } from 'react-native';
-import { useCart } from './CartContext';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { router } from 'expo-router';
-import ModernAlert from '../../components/ModernAlert';
+import React, { useState } from 'react';
+import { ActivityIndicator, Dimensions, Image, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import ModernAlert from '../../components/Component/ModernAlert';
+import { useCart } from './CartContext';
 const { width } = Dimensions.get("window");
 
 const Item = ({ item }) => {
@@ -58,7 +58,7 @@ const Item = ({ item }) => {
 
   const handleProductPress = () => {
     router.push({
-      pathname: "/singlepage",
+      pathname: "/Pages/singlepage",
       params: {
         id: item.docId,
         category: item.category

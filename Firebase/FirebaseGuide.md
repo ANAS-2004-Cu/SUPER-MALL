@@ -208,6 +208,61 @@ const uploadProductImage = async (imageFile, productId) => {
 };
 ```
 
+## إنشاء طلب من السلة (Orders)
+
+### طلب الدفع عند الاستلام (Cash on Delivery)
+```javascript
+import { placeOrderFromCart, SHIPPING_FEE } from './Firebase/Firebase';
+
+const placeCashOrder = async (selectedAddress) => {
+  const result = await placeOrderFromCart({
+    paymentMethod: 'CASH',
+    addressSnapshot: selectedAddress,
+    shippingFee: SHIPPING_FEE
+  });
+  if (result.success) {
+    console.log('تم إنشاء الطلب بنجاح', result.total);
+  } else {
+    console.log('خطأ:', result.error);
+  }
+};
+```
+
+### طلب ببطاقة (Card)
+```javascript
+import { placeOrderFromCart, SHIPPING_FEE } from './Firebase/Firebase';
+
+const placeCardOrder = async (selectedAddress) => {
+  const result = await placeOrderFromCart({
+    paymentMethod: 'CARD',
+    addressSnapshot: selectedAddress,
+    shippingFee: SHIPPING_FEE
+  });
+  // نجاح/فشل كما سبق
+};
+```
+
+### طلب بمحفظة (Wallet)
+```javascript
+import { placeOrderFromCart, SHIPPING_FEE } from './Firebase/Firebase';
+
+const placeWalletOrder = async (selectedAddress, phone) => {
+  const result = await placeOrderFromCart({
+    paymentMethod: 'WALLET',
+    addressSnapshot: selectedAddress,
+    walletPhone: phone,
+    shippingFee: SHIPPING_FEE
+  });
+  // نجاح/فشل كما سبق
+};
+```
+
+> ملاحظات:
+> - الدالة placeOrderFromCart تقوم بإنشاء الطلب داخل Users.Orders ثم تفريغ عربة المستخدم تلقائياً.
+> - يتم حساب المجموع الفرعي والنهائي داخلياً.
+> - مرر shippingFee إلى placeOrderFromCart من واجهتك لضمان المطابقة بين المعروض والمحفوظ.
+> - يمكن استخدام SHIPPING_FEE كقيمة افتراضية في الواجهة.
+
 ## أمثلة عملية للاستخدام في React
 
 ### مكون تسجيل الدخول
@@ -316,6 +371,9 @@ import {
   
   // التخزين
   uploadFile,
+
+  // الطلبات
+  placeOrderFromCart, SHIPPING_FEE,
   
   // البيانات الأساسية
   auth, db, storage

@@ -1,34 +1,34 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'; // For storing emailForSignIn
 import { initializeApp } from "firebase/app";
 import {
-    createUserWithEmailAndPassword,
-    signOut as firebaseSignOut,
-    getAuth,
-    isSignInWithEmailLink,
-    onAuthStateChanged,
-    reload,
-    sendEmailVerification,
-    sendPasswordResetEmail,
-    sendSignInLinkToEmail,
-    signInWithEmailAndPassword,
-    signInWithEmailLink,
-    updateEmail,
-    updateProfile
+  createUserWithEmailAndPassword,
+  signOut as firebaseSignOut,
+  getAuth,
+  isSignInWithEmailLink,
+  onAuthStateChanged,
+  reload,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  sendSignInLinkToEmail,
+  signInWithEmailAndPassword,
+  signInWithEmailLink,
+  updateEmail,
+  updateProfile
 } from "firebase/auth";
 import {
-    addDoc,
-    collection,
-    deleteDoc,
-    doc,
-    getDoc,
-    getDocs,
-    getFirestore,
-    limit,
-    orderBy,
-    query,
-    setDoc,
-    updateDoc,
-    where
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  getFirestore,
+  limit,
+  orderBy,
+  query,
+  setDoc,
+  updateDoc,
+  where
 } from "firebase/firestore";
 import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 
@@ -409,7 +409,92 @@ export const getUserData = async (uid) => {
     return null;
   }
 };
+// '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+// New: reusable address helpers
+export const getUserAddresses = async (uid) => {
+  try {
+    if (!uid) return [];
+    const snap = await getDoc(doc(db, 'Users', uid));
+    if (!snap.exists()) return [];
+    const list = snap.data()?.Address || [];
+    return list.map((a, idx) => ({
+      id: a?.id || `address-${idx}`,
+      ...a
+    }));
+  } catch {
+    return [];
+  }
+};
 
+// New: update full Address array for a user
+export const updateUserAddresses = async (uid, newAddresses = []) => {
+  try {
+    if (!uid) return { success: false, error: 'No uid' };
+    await updateDoc(doc(db, 'Users', uid), { Address: Array.isArray(newAddresses) ? newAddresses : [] });
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+};
+
+// New: add a single address to current user
+export const addUserAddress = async (address) => {
+  try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return { success: false, error: 'Login required' };
+
+    const current = await getUserAddresses(uid);
+    const id = address?.id || Date.now().toString();
+    const sanitized = {
+      id,
+      FullName: address?.FullName || '',
+      Street: address?.Street || '',
+      City: address?.City || '',
+      State: address?.State || '',
+      ZIP: address?.ZIP || '',
+      Phone: address?.Phone || '',
+      isDefault: false
+    };
+    const updated = [...current, sanitized];
+    const res = await updateUserAddresses(uid, updated);
+    return res.success ? { success: true, id } : res;
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+};
+
+// New: update a single existing address for current user (preserve isDefault)
+export const updateUserAddress = async (address) => {
+  try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return { success: false, error: 'Login required' };
+    if (!address?.id) return { success: false, error: 'Missing address id' };
+
+    const current = await getUserAddresses(uid);
+    const idx = current.findIndex(a => a.id === address.id);
+    if (idx === -1) return { success: false, error: 'Address not found' };
+
+    const existing = current[idx];
+    const updated = [...current];
+    updated[idx] = {
+      ...existing,
+      FullName: address?.FullName ?? existing.FullName,
+      Street: address?.Street ?? existing.Street,
+      City: address?.City ?? existing.City,
+      State: address?.State ?? existing.State,
+      ZIP: address?.ZIP ?? existing.ZIP,
+      Phone: address?.Phone ?? existing.Phone,
+      isDefault: existing.isDefault // preserve default flag
+    };
+
+    const res = await updateUserAddresses(uid, updated);
+    return res.success ? { success: true } : res;
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+};
+
+// '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 // Cart helper functions (User document contains: cart: [{ productId, quantity }])
 export const getUserCart = async (uid) => {
   if (!uid) return [];
@@ -472,8 +557,177 @@ export const clearUserCart = async (uid) => {
   }
 };
 
+// Internal helper: compute discounted price and percentage consistently with UI
+const computeOrderPricing = (product = {}) => {
+  const base = Number(product.price) || 0;
+  let discountPercent = 0;
+  let discounted = base;
+  if (product.discountPrice !== undefined && product.discountPrice !== null) {
+    const dp = Number(product.discountPrice);
+    if (!isNaN(dp) && dp >= 0 && dp <= base) {
+      discounted = dp;
+      discountPercent = base > 0 ? Math.round((1 - discounted / base) * 100) : 0;
+    }
+  } else {
+    const perc = product.discount ?? product.discountPercent ?? product.offerPercentage ?? product.off ?? product.percentageOff;
+    if (perc !== undefined && perc !== null) {
+      const pNum = Number(perc);
+      if (!isNaN(pNum) && pNum > 0 && pNum < 100) {
+        discountPercent = pNum;
+        discounted = base * (1 - pNum / 100);
+      }
+    }
+  }
+  return { base, discounted: Math.max(0, discounted), discountPercent };
+};
+
+// Add: dedicated cache for RegionFee map
+let __regionFeeMap = null;
+
+// New: cache for available regions list
+let __availableRegions = null;
+
+// New: get available regions (cities) from Manage doc array "AvilableRegion" (fallback to "AvailableRegion")
+export const getAvailableRegions = async () => {
+  try {
+    if (Array.isArray(__availableRegions) && __availableRegions.length) return __availableRegions;
+
+    const snap = await getDocs(query(collection(db, 'Manage'), limit(1)));
+    if (snap.empty) return [];
+
+    const data = snap.docs[0].data() || {};
+    const list = data?.AvilableRegion || data?.AvailableRegion || [];
+    const normalized = Array.isArray(list)
+      ? list
+          .map((v) => String(v ?? '').trim())
+          .filter((v) => v.length > 0)
+      : [];
+
+    __availableRegions = normalized;
+    return __availableRegions;
+  } catch {
+    return [];
+  }
+};
+
+// New: get shipping fee by city using Manage doc's RegionFee map only
+export const getShippingFeeByCity = async (city) => {
+  try {
+    const cityKey = String(city || '').trim();
+    if (!cityKey) return 0;
+
+    // Load RegionFee map once
+    if (!__regionFeeMap) {
+      const snap = await getDocs(query(collection(db, 'Manage'), limit(1)));
+      if (snap.empty) return 0;
+      const data = snap.docs[0].data() || {};
+      const rf = data?.RegionFee || data?.regionFee || null;
+      __regionFeeMap = (rf && typeof rf === 'object') ? rf : {};
+    }
+
+    // Exact match first
+    let val = __regionFeeMap[cityKey];
+    // Then case-insensitive fallback
+    if (val === undefined) {
+      const matchKey = Object.keys(__regionFeeMap).find(k => k?.toLowerCase?.() === cityKey.toLowerCase());
+      if (matchKey) val = __regionFeeMap[matchKey];
+    }
+
+    const n = typeof val === 'number' ? val : parseFloat(String(val ?? '').replace(/[^0-9.]/g, ''));
+    return !isNaN(n) && n >= 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+};
+
+// Create an order from the current user's cart and clear the cart
+export const placeOrderFromCart = async ({
+  paymentMethod,
+  addressSnapshot = null,
+  walletPhone = null,
+  shippingFee
+} = {}) => {
+  try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return { success: false, error: 'Login required' };
+
+    const userRef = doc(db, 'Users', uid);
+    const userSnap = await getDoc(userRef);
+    if (!userSnap.exists()) return { success: false, error: 'User not found' };
+
+    // Get enriched cart from AsyncStorage instead of refetching
+    let items = [];
+    try {
+      const raw = await AsyncStorage.getItem('UserCart');
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(parsed)) {
+        items = parsed
+          .filter(it => it && it.productId && (it.product))
+          .map(it => ({
+            productId: it.productId,
+            quantity: Number(it.quantity) || 1,
+            product: it.product || {}
+          }));
+      }
+    } catch {}
+    if (!items.length) return { success: false, error: 'Cart is empty' };
+
+    // Validate or auto-fetch shipping fee using RegionFee
+    let fee = Number(shippingFee);
+    if (isNaN(fee) || fee < 0) {
+      const city = addressSnapshot?.City || '';
+      fee = await getShippingFeeByCity(city);
+    }
+
+    // Build order
+    let subtotal = 0;
+    const now = new Date();
+    const OrderedProducts = items.map(ci => {
+      const p = ci.product || {};
+      const { discounted, discountPercent } = computeOrderPricing(p);
+      const qty = Number(ci.quantity) || 1;
+      subtotal += discounted * qty;
+      return {
+        createdAt: now,
+        description: p.description || '',
+        discount: discountPercent || Number(p.discount) || 0,
+        image: p.image || '',
+        name: p.name || '',
+        price: Number(p.price) || 0,
+        productId: ci.productId,
+        quantity: qty,
+        category: p.category ?? p.Category ?? p.categoryName ?? ''
+      };
+    });
+    const total = subtotal + (items.length ? fee : 0);
+
+    const prevOrders = userSnap.data()?.Orders;
+    const Orders = Array.isArray(prevOrders) ? [...prevOrders] : [];
+    Orders.push({
+      createdAt: now,
+      paymentMethod: String(paymentMethod || 'CASH'),
+      shippingFee: fee,
+      subtotal,
+      total,
+      walletPhone: walletPhone || null,
+      addressSnapshot,
+      OrderedProducts
+    });
+
+    await updateDoc(userRef, { Orders });
+
+    // Clear both Firestore cart and local AsyncStorage snapshot
+    await clearUserCart(uid);
+    try { await AsyncStorage.setItem('UserCart', JSON.stringify([])); } catch {}
+
+    return { success: true, subtotal, total };
+  } catch (e) {
+    return { success: false, error: e.message || 'Failed to create order' };
+  }
+};
+
 export {
-    auth, collection, db, doc,
-    getDoc, getDocs, limit, orderBy, query, storage, where
+  auth, collection, db, doc,
+  getDoc, getDocs, limit, orderBy, query, storage, where
 };
 
