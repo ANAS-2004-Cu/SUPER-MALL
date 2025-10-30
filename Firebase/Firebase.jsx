@@ -17,6 +17,8 @@ import {
 } from "firebase/auth";
 import {
   addDoc,
+  arrayRemove,
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -24,6 +26,7 @@ import {
   getDocs,
   getFirestore,
   limit,
+  onSnapshot,
   orderBy,
   query,
   setDoc,
@@ -33,12 +36,12 @@ import {
 import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAg3mV79kZOYINI_OB7wcOGE3ek5QXE0yg",
-  authDomain: "cs-303-a525a.firebaseapp.com",
-  projectId: "cs-303-a525a",
-  storageBucket: "cs-303-a525a.firebasestorage.app",
-  messagingSenderId: "625620482602",
-  appId: "1:625620482602:web:437c2e4902ea95545d2153"
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID
 };
 
 const app = initializeApp(firebaseConfig);
@@ -409,88 +412,52 @@ export const getUserData = async (uid) => {
     return null;
   }
 };
+
 // '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
-// New: reusable address helpers
-export const getUserAddresses = async (uid) => {
-  try {
-    if (!uid) return [];
-    const snap = await getDoc(doc(db, 'Users', uid));
-    if (!snap.exists()) return [];
-    const list = snap.data()?.Address || [];
-    return list.map((a, idx) => ({
-      id: a?.id || `address-${idx}`,
-      ...a
-    }));
-  } catch {
-    return [];
+// New centralized Favorites helpers
+
+// New real-time listener for user favorites
+export const listenToUserFavorites = (userId, callback) => {
+  if (!userId) {
+    callback([]);
+    return () => {}; // Return an empty unsubscribe function
   }
+
+  const userDocRef = doc(db, "Users", userId);
+
+  // onSnapshot returns its own unsubscribe function
+  const unsubscribe = onSnapshot(userDocRef, (snapshot) => {
+    if (snapshot.exists()) {
+      const fav = snapshot.data()?.Fav;
+      const favList = Array.isArray(fav) ? fav.filter(Boolean).map(String) : [];
+      callback(favList);
+    } else {
+      console.warn("User document not found for listener:", userId);
+      callback([]);
+    }
+  }, (error) => {
+    console.error("Error listening to user favorites:", error);
+    callback([]);
+  });
+
+  return unsubscribe; // Return the cleanup function
 };
 
-// New: update full Address array for a user
-export const updateUserAddresses = async (uid, newAddresses = []) => {
+// Toggle a product in user's favorites using arrayUnion/arrayRemove
+// Returns { success: true, newStatus: boolean }
+export const toggleFavorite = async (uid, productId) => {
   try {
-    if (!uid) return { success: false, error: 'No uid' };
-    await updateDoc(doc(db, 'Users', uid), { Address: Array.isArray(newAddresses) ? newAddresses : [] });
-    return { success: true };
+    if (!uid || !productId) return { success: false, error: 'Missing params' };
+    const userRef = doc(db, 'Users', uid);
+    const snap = await getDoc(userRef);
+    const current = snap.exists() && Array.isArray(snap.data()?.Fav) ? snap.data().Fav : [];
+    const exists = current.includes(productId);
+    await updateDoc(userRef, {
+      Fav: exists ? arrayRemove(productId) : arrayUnion(productId)
+    });
+    return { success: true, newStatus: !exists };
   } catch (e) {
-    return { success: false, error: e.message };
-  }
-};
-
-// New: add a single address to current user
-export const addUserAddress = async (address) => {
-  try {
-    const uid = auth.currentUser?.uid;
-    if (!uid) return { success: false, error: 'Login required' };
-
-    const current = await getUserAddresses(uid);
-    const id = address?.id || Date.now().toString();
-    const sanitized = {
-      id,
-      FullName: address?.FullName || '',
-      Street: address?.Street || '',
-      City: address?.City || '',
-      State: address?.State || '',
-      ZIP: address?.ZIP || '',
-      Phone: address?.Phone || '',
-      isDefault: false
-    };
-    const updated = [...current, sanitized];
-    const res = await updateUserAddresses(uid, updated);
-    return res.success ? { success: true, id } : res;
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-};
-
-// New: update a single existing address for current user (preserve isDefault)
-export const updateUserAddress = async (address) => {
-  try {
-    const uid = auth.currentUser?.uid;
-    if (!uid) return { success: false, error: 'Login required' };
-    if (!address?.id) return { success: false, error: 'Missing address id' };
-
-    const current = await getUserAddresses(uid);
-    const idx = current.findIndex(a => a.id === address.id);
-    if (idx === -1) return { success: false, error: 'Address not found' };
-
-    const existing = current[idx];
-    const updated = [...current];
-    updated[idx] = {
-      ...existing,
-      FullName: address?.FullName ?? existing.FullName,
-      Street: address?.Street ?? existing.Street,
-      City: address?.City ?? existing.City,
-      State: address?.State ?? existing.State,
-      ZIP: address?.ZIP ?? existing.ZIP,
-      Phone: address?.Phone ?? existing.Phone,
-      isDefault: existing.isDefault // preserve default flag
-    };
-
-    const res = await updateUserAddresses(uid, updated);
-    return res.success ? { success: true } : res;
-  } catch (e) {
-    return { success: false, error: e.message };
+    return { success: false, error: e.message || 'Failed to toggle favorite' };
   }
 };
 
@@ -506,6 +473,16 @@ export const getUserCart = async (uid) => {
     }
   } catch {}
   return [];
+};
+
+export const isProductInCart = async (userId, productId) => {
+  if (!userId || !productId) return false;
+  try {
+    const cart = await getUserCart(userId); // Uses your existing helper
+    return cart.some(item => item.productId === productId);
+  } catch {
+    return false;
+  }
 };
 
 export const setUserCart = async (uid, cartArray) => {
@@ -723,6 +700,116 @@ export const placeOrderFromCart = async ({
     return { success: true, subtotal, total };
   } catch (e) {
     return { success: false, error: e.message || 'Failed to create order' };
+  }
+};
+
+// New: central "Categories" helpers
+
+// New: Read from cache only. Contains parsing logic.
+export const loadCachedCategories = async () => {
+  try {
+    const raw = await AsyncStorage.getItem('AvilableCategory');
+    if (!raw) return { success: true, data: [] };
+
+    const rawCats = JSON.parse(raw);
+    const list = Array.isArray(rawCats) ? rawCats : [];
+    const normalized = list
+      .map((c, idx) => {
+        if (!c) return null;
+        if (typeof c === 'string') {
+          const stripped = c.replace(/^\s*\{?\s*/, '').replace(/\s*\}?\s*$/, '');
+          const [namePart, ...rest] = stripped.split(',');
+          const name = (namePart || '').trim();
+          const image = (rest.length > 0 ? rest.join(',').trim() : '') || '';
+          if (!name) return null;
+          return { id: `cat-${idx}`, name, image };
+        }
+        if (typeof c === 'object') {
+          const name = c.categoryname || c.categoryName || c.name || c.category || c.title || '';
+          const image = c.categoriimage || c.categoryimage || c.categoryImage || c.image || c.img || '';
+          const id = c.id || c._id || `cat-${idx}`;
+          if (!name) return null;
+          return { id: String(id), name: String(name), image: String(image || '') };
+        }
+        return null;
+      })
+      .filter(Boolean);
+    return { success: true, data: normalized };
+  } catch {
+    return { success: false, data: [] };
+  }
+};
+
+// Read: fetch Manage.AvilableCategory, persist to AsyncStorage, and return parsed data
+export const syncAvailableCategories = async () => {
+  try {
+    const resp = await getCollection('Manage');
+    if (!resp.success || !Array.isArray(resp.data) || resp.data.length === 0) {
+      // On failure, still try to return from cache
+      return await loadCachedCategories();
+    }
+    const doc0 = resp.data[0] || {};
+    const rawCats = doc0.AvilableCategory;
+    if (rawCats != null) {
+      await AsyncStorage.setItem('AvilableCategory', JSON.stringify(rawCats));
+    }
+    // After syncing, load from cache to ensure consistent parsing
+    return await loadCachedCategories();
+  } catch {
+    return await loadCachedCategories();
+  }
+};
+
+// New: Read preferred categories from local cache only
+export const loadCachedPreferredCategories = async () => {
+  try {
+    const userObjectJson = await AsyncStorage.getItem('UserObject');
+    if (userObjectJson) {
+      const userObject = JSON.parse(userObjectJson);
+      if (userObject && Array.isArray(userObject.preferredCategories)) {
+        return userObject.preferredCategories.map(String);
+      }
+    }
+    return [];
+  } catch {
+    return [];
+  }
+};
+
+// New: Sync user data from Firestore to local cache
+export const syncUserPreferredCategories = async (userId) => {
+  if (!userId) return { success: false };
+  try {
+    const updated = await getUserData(userId);
+    if (updated) {
+      await AsyncStorage.setItem('UserObject', JSON.stringify(updated));
+      return { success: true };
+    }
+    return { success: false };
+  } catch {
+    return { success: false };
+  }
+};
+
+// Write: update user's preferredCategories and refresh AsyncStorage UserObject
+export const updateUserPreferredCategories = async (userId, categoriesList = []) => {
+  try {
+    if (!userId) return { success: false, error: 'Missing userId' };
+    const arr = Array.isArray(categoriesList) ? categoriesList.map(String) : [];
+    const res = await updateDocument('Users', userId, { preferredCategories: arr });
+    if (!res.success) return res;
+
+    // Refresh local cache of user data
+    try {
+      const updated = await getUserData(userId);
+      if (updated) {
+        await AsyncStorage.setItem('UserObject', JSON.stringify(updated));
+      }
+    } catch {}
+
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e?.message || 'Failed to update preferred categories' };
   }
 };
 

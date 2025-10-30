@@ -1,11 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, AppState, FlatList, Image, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import Icon from "react-native-vector-icons/Feather";
 import MiniAlert from '../../components/Component/MiniAlert';
 import ProductCard from '../../components/Component/ProductCard';
-import { auth, createLimit, createOrderBy, getCollection, getUserCart, getUserData } from '../../Firebase/Firebase';
+import { auth, createLimit, createOrderBy, getCollection, getUserCart, getUserData, listenToUserFavorites, loadCachedCategories, loadCachedPreferredCategories, syncAvailableCategories, toggleFavorite } from '../../Firebase/Firebase';
 import { darkTheme, lightTheme } from '../../Theme/Tabs/HomeTheme';
 
 const Categories = [
@@ -45,9 +45,10 @@ const HomePage = () => {
   const bannerRef = useRef(null);
   const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
   const dimensions = useWindowDimensions();
-  const BANNER_WIDTH = dimensions.width - 40; // Added constant for consistent banner width
+  const BANNER_WIDTH = dimensions.width - 40;
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [cartCount, setCartCount] = useState(0);
+  const [favoritesList, setFavoritesList] = useState([]);
 
   const checkTheme = async () => {
     try {
@@ -78,6 +79,21 @@ const HomePage = () => {
     };
   }, []);
 
+  useEffect(() => {
+    const userId = currentUser?.uid;
+    if (userId) {
+      // Start the listener
+      const unsubscribe = listenToUserFavorites(userId, (favoritesArray) => {
+        setFavoritesList(favoritesArray);
+      });
+      
+      // Return the cleanup function
+      return () => unsubscribe();
+    } else {
+      setFavoritesList([]);
+    }
+  }, [currentUser]); // Dependency is on currentUser
+
   const showAlert = (message, type = 'success') => {
     setLoad(true);
     setAlertMsg(message);
@@ -88,7 +104,6 @@ const HomePage = () => {
     }, 3000);
   };
 
-  // Add: check login before navigating to Cart
   const handleCartPress = async () => {
     try {
       const userJson = await AsyncStorage.getItem('UserObject');
@@ -124,25 +139,22 @@ const HomePage = () => {
     } catch { }
   };
 
-  const fetchPreferredCategories = async () => {
+  const fetchPreferredCategories = useCallback(async () => {
     try {
-      const userObjectJson = await AsyncStorage.getItem('UserObject');
-      if (userObjectJson) {
-        const userObject = JSON.parse(userObjectJson);
-        if (userObject && userObject.preferredCategories && userObject.preferredCategories.length > 0) {
-          setPreferredCategories(userObject.preferredCategories);
-          return userObject.preferredCategories;
-        }
-      }
-      return [];
+      const cats = await loadCachedPreferredCategories();
+      setPreferredCategories(cats);
     } catch {
-      return [];
+      setPreferredCategories([]);
     }
-  };
+  }, []);
 
   const fetchRecommendedProducts = useCallback(async () => {
-    const categories = await fetchPreferredCategories();
-    if (categories.length === 0) return;
+    const categories = await loadCachedPreferredCategories();
+    if (categories.length === 0) {
+      setRecommendedProducts([]);
+      return;
+    }
+    setPreferredCategories(categories);
     try {
       const response = await getCollection("products");
       if (response.success) {
@@ -160,12 +172,11 @@ const HomePage = () => {
       const userData = await getUserData(currentUser.uid);
       if (userData) {
         await AsyncStorage.setItem('UserObject', JSON.stringify(userData));
-        if (userData.preferredCategories && userData.preferredCategories.length > 0) {
-          setPreferredCategories(userData.preferredCategories);
-        }
+        // After updating user data from firebase, reload preferred categories from cache
+        await fetchPreferredCategories();
       }
     } catch { }
-  }, [currentUser]);
+  }, [currentUser, fetchPreferredCategories]);
 
   useEffect(() => {
     const init = async () => {
@@ -206,92 +217,11 @@ const HomePage = () => {
     }
   }, []);
 
-  const loadAvailableCategoriesFromStorage = useCallback(async () => {
-    try {
-      const raw = await AsyncStorage.getItem('AvilableCategory');
-      if (!raw) {
-        setAvailableCategories(Categories);
-        return;
-      }
-
-      let arr;
-      try {
-        arr = JSON.parse(raw);
-      } catch {
-        arr = [raw];
-      }
-
-      if (!Array.isArray(arr) || arr.length === 0) {
-        setAvailableCategories(Categories);
-        return;
-      }
-
-      const parsed = arr
-        .map((c, idx) => {
-          if (!c) return null;
-          if (typeof c === 'string') {
-            const stripped = c.replace(/^\s*\{?\s*/, '').replace(/\s*\}?\s*$/, '');
-            const [namePart, ...rest] = stripped.split(',');
-            const name = (namePart || '').trim();
-            const image = (rest.length > 0 ? rest.join(',').trim() : '') || '';
-            if (!name) return null;
-            return { id: `pm-${idx}`, name, image };
-          }
-          if (typeof c === 'object') {
-            const name = c.categoryname || c.categoryName || c.name || c.category || c.title || '';
-            const image = c.categoriimage || c.categoryimage || c.categoryImage || c.image || c.img || '';
-            const id = c.id || c._id || `pm-${idx}`;
-            if (!name) return null;
-            return { id, name, image };
-          }
-          return null;
-        })
-        .filter(Boolean);
-
-      if (parsed.length > 0) {
-        setAvailableCategories(parsed);
-      } else {
-        setAvailableCategories(Categories);
-      }
-    } catch {
-      setAvailableCategories(Categories);
-    }
-  }, []);
-
   const fetchAllProducts = useCallback(async () => {
     try {
       const response = await getCollection("products");
       if (response.success) {
         setAllProducts(response.data);
-      }
-    } catch { }
-  }, []);
-
-  const fetchProductsManage = useCallback(async () => {
-    try {
-      const response = await getCollection("Manage");
-      if (response.success && Array.isArray(response.data) && response.data.length > 0) {
-        const doc = response.data[0];
-        setTopSellingIds(Array.isArray(doc.TopSelling) ? doc.TopSelling : []);
-        setNewArrivalIds(Array.isArray(doc.NewArrival) ? doc.NewArrival : []);
-        
-        // Add this code to fetch ad banners
-        if (Array.isArray(doc.Ad)) {
-          setAdBanners(doc.Ad);
-          // Reset current banner index when banners are loaded
-          setCurrentBannerIndex(0);
-        }
-        
-        // store the raw AvilableCategory (if present) to AsyncStorage so loadAvailableCategoriesFromStorage reads it
-        const rawCats =
-          doc.AvilableCategory;
-        if (rawCats !== null) {
-          try {
-            await AsyncStorage.setItem('AvilableCategory', JSON.stringify(rawCats));
-          } catch (e) {
-            console.warn('Failed to save AvilableCategory to AsyncStorage', e);
-          }
-        }
       }
     } catch { }
   }, []);
@@ -303,7 +233,6 @@ const HomePage = () => {
         return;
       }
       const items = await getUserCart(auth.currentUser.uid);
-      // Sum quantities
       const total = items.reduce((s, it) => s + (Number(it.quantity) || 1), 0);
       setCartCount(total);
     } catch {
@@ -317,6 +246,7 @@ const HomePage = () => {
       const logged = !!auth.currentUser || (userJson && userJson !== "undefined");
       setIsLoggedIn(!!logged);
       if (logged) loadCartCount();
+      else setCartCount(0);
     } catch {
       setIsLoggedIn(false);
       setCartCount(0);
@@ -328,7 +258,12 @@ const HomePage = () => {
     const start = async () => {
       await fetchProducts();
       updateUserDataFromFirebase();
-      loadAvailableCategoriesFromStorage();
+      const { success, data: cats } = await syncAvailableCategories();
+      if (success && cats.length > 0) {
+        setAvailableCategories(cats);
+      } else {
+        setAvailableCategories(Categories);
+      }
     };
     start();
     return () => {
@@ -336,7 +271,20 @@ const HomePage = () => {
         unsubscribe();
       }
     };
-  }, [fetchProducts, updateUserDataFromFirebase, loadAvailableCategoriesFromStorage]);
+  }, [fetchProducts, updateUserDataFromFirebase]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const loadCats = async () => {
+        const { data: cats } = await loadCachedCategories();
+        if (cats && cats.length > 0) {
+          setAvailableCategories(cats);
+        }
+      };
+      loadCats();
+      checkLoginStatus();
+    }, [checkLoginStatus])
+  );
 
   useEffect(() => {
     checkLoginStatus();
@@ -346,31 +294,40 @@ const HomePage = () => {
     async () => {
       try {
         setRefreshing(true);
-        // run independent fetches in parallel where possible
         await Promise.all([
           fetchProducts(),
           fetchRecommendedProducts(),
           updateUserDataFromFirebase(),
           fetchAllProducts(),
-          checkLoginStatus()
+          checkLoginStatus(),
+          syncAvailableCategories().then(({ success, data: cats }) => {
+            if (success && cats.length > 0) {
+              setAvailableCategories(cats);
+            } else {
+              setAvailableCategories(Categories);
+            }
+          })
         ].map(p => p.catch ? p : Promise.resolve()));
 
-        // ensure Manage is fetched and stored before reloading categories from storage
-        await fetchProductsManage();
-        await loadAvailableCategoriesFromStorage();
         await loadCartCount();
       } finally {
         setRefreshing(false);
       }
     },
-    [fetchProducts, fetchRecommendedProducts, updateUserDataFromFirebase, fetchAllProducts, fetchProductsManage, loadAvailableCategoriesFromStorage, checkLoginStatus, loadCartCount]
+    [fetchProducts, fetchRecommendedProducts, updateUserDataFromFirebase, fetchAllProducts, checkLoginStatus, loadCartCount]
   );
 
   useEffect(() => {
     fetchAllProducts();
-    fetchProductsManage();
-    loadAvailableCategoriesFromStorage();
-  }, [fetchAllProducts, fetchProductsManage, loadAvailableCategoriesFromStorage]);
+    (async () => {
+      const { success, data: cats } = await syncAvailableCategories();
+      if (success && cats.length > 0) {
+        setAvailableCategories(cats);
+      } else {
+        setAvailableCategories(Categories);
+      }
+    })();
+  }, [fetchAllProducts]);
 
   const topSellingProducts = useMemo(() => {
     if (topSellingIds && topSellingIds.length > 0 && allProducts.length > 0) {
@@ -432,7 +389,6 @@ const HomePage = () => {
   const handleBannerPress = (item) => {
     if (!item) return;
     
-    // Check the action type and navigate accordingly
     switch (item.action) {
       case "navigate":
         if (item.id) {
@@ -454,7 +410,6 @@ const HomePage = () => {
         
       case "offer":
       default:
-        // Default behavior - go to ad detail page
         const imgParam = item && item.img ? encodeURIComponent(item.img) : "";
         const contentParam = item && item.content ? encodeURIComponent(item.content) : "";
         
@@ -469,7 +424,6 @@ const HomePage = () => {
     }
   };
 
-  // Auto-scroll banner effect (updated: remove dependency on currentBannerIndex & use scrollToOffset)
   useEffect(() => {
     if (!adBanners || adBanners.length <= 1) return;
     const interval = setInterval(() => {
@@ -489,7 +443,6 @@ const HomePage = () => {
     return () => clearInterval(interval);
   }, [adBanners, BANNER_WIDTH]);
 
-  // Handle scroll end to update current index (use BANNER_WIDTH)
   const handleBannerScroll = useCallback((event) => {
     if (!adBanners || adBanners.length <= 1) return;
     const contentOffset = event.nativeEvent.contentOffset.x;
@@ -497,7 +450,6 @@ const HomePage = () => {
     if (index !== currentBannerIndex) setCurrentBannerIndex(index);
   }, [adBanners, BANNER_WIDTH, currentBannerIndex]);
 
-  // New: allow tapping pagination dots to jump to banner (use scrollToOffset always)
   const scrollToBanner = useCallback((index) => {
     if (!adBanners || index < 0 || index >= adBanners.length) return;
     setCurrentBannerIndex(index);
@@ -510,6 +462,16 @@ const HomePage = () => {
       } catch {}
     }
   }, [adBanners, BANNER_WIDTH]);
+
+  const handleFavoriteToggle = async (productId) => {
+    try {
+      if (!auth.currentUser) {
+        showAlert("Please login to add items to your favorites", 'error');
+        return;
+      }
+      await toggleFavorite(auth.currentUser.uid, productId);
+    } catch { }
+  };
 
   if (error) {
     return (
@@ -532,6 +494,8 @@ const HomePage = () => {
       currentUser={currentUser}
       onShowAlert={showAlert}
       theme={theme}
+      isFavorite={favoritesList.includes(item.id)}
+      onFavoriteToggle={handleFavoriteToggle}
     />
   );
 
@@ -950,7 +914,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 5,
     position: 'relative',
   },
-  // New container for login button with text
   headerLoginContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -968,7 +931,7 @@ const styles = StyleSheet.create({
   bannerimage: {
     width: '100%',
     height: undefined,
-    aspectRatio: 2.5, // Default fallback aspect ratio if no banner images
+    aspectRatio: 2.5,
     resizeMode: 'contain',
     borderRadius: 10,
   },
@@ -980,13 +943,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 10,
-    overflow: 'visible', // Changed from 'hidden' to 'visible' to ensure full width is shown
-    paddingHorizontal: 0, // Remove horizontal padding
+    overflow: 'visible',
+    paddingHorizontal: 0,
   },
   adBannerImage: {
     width: '100%',
     height: undefined,
-    aspectRatio: 2.5, // Default aspect ratio
+    aspectRatio: 2.5,
     borderRadius: 10,
   },
   adBannerContentContainer: {

@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { doc, updateDoc } from 'firebase/firestore';
-import React, { useCallback, useEffect, useState } from 'react';
+// Remove direct Firestore update imports
+// import { doc, updateDoc } from 'firebase/firestore';
+import React, { useEffect, useState } from 'react';
 import { Dimensions, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import ModernAlert from '../../components/Component/ModernAlert';
-import { db, getCollection } from '../../Firebase/Firebase';
+// Replace db/getCollection usage with centralized service
+import { /* db, getCollection */ syncAvailableCategories, updateUserPreferredCategories } from '../../Firebase/Firebase';
 
 const { width } = Dimensions.get('window');
 const cardWidth = width / 2 - 20;
@@ -34,70 +35,19 @@ const CategorySelection = () => {
     setAlertVisible(true);
   };
 
-  const loadAvailableCategoriesFromStorage = useCallback(async () => {
-    try {
-      const raw = await AsyncStorage.getItem('AvilableCategory');
-      if (!raw) {
-        setAvailableCategories([]);
-        return;
-      }
-      let arr;
-      try {
-        arr = JSON.parse(raw);
-      } catch {
-        arr = [raw];
-      }
-      if (!Array.isArray(arr) || arr.length === 0) {
-        setAvailableCategories([]);
-        return;
-      }
-      const parsed = arr
-        .map((c, idx) => {
-          if (!c) return null;
-          if (typeof c === 'string') {
-            const stripped = c.replace(/^\s*\{?\s*/, '').replace(/\s*\}?\s*$/, '');
-            const [namePart, ...rest] = stripped.split(',');
-            const name = (namePart || '').trim();
-            const image = (rest.length > 0 ? rest.join(',').trim() : '') || '';
-            if (!name) return null;
-            return { id: `cs-${idx}`, name, image };
-          }
-          if (typeof c === 'object') {
-            const name = c.categoryname || c.categoryName || c.name || c.category || c.title || '';
-            const image = c.categoriimage || c.categoryimage || c.categoryImage || c.image || c.img || '';
-            const id = c.id || c._id || `cs-${idx}`;
-            if (!name) return null;
-            return { id, name, image };
-          }
-          return null;
-        })
-        .filter(Boolean);
-      setAvailableCategories(parsed);
-    } catch {
-      setAvailableCategories([]);
-    }
-  }, []);
-
-  const fetchProductsManage = useCallback(async () => {
-    try {
-      const response = await getCollection('Manage');
-      if (response.success && Array.isArray(response.data) && response.data.length > 0) {
-        const doc0 = response.data[0];
-        if (doc0.AvilableCategory != null) {
-          await AsyncStorage.setItem('AvilableCategory', JSON.stringify(doc0.AvilableCategory));
-        }
-      }
-    } catch { }
-  }, []);
+  // Remove: fetchProductsManage (moved to Firebase service)
+  // ...existing code...
 
   useEffect(() => {
     (async () => {
       setLoadingCats(true);
-      await fetchProductsManage();
-      await loadAvailableCategoriesFromStorage();
+      const { success, data: cats } = await syncAvailableCategories();
+      if (success && cats.length > 0) {
+        setAvailableCategories(cats);
+      }
       setLoadingCats(false);
     })();
-  }, [fetchProductsManage, loadAvailableCategoriesFromStorage]);
+  }, []);
 
   const toggleCategory = (categoryName) => {
     if (selectedCategories.includes(categoryName)) {
@@ -121,10 +71,11 @@ const CategorySelection = () => {
     setLoading(true);
     try {
       if (userId) {
-        await updateDoc(doc(db, "Users", userId), {
-          preferredCategories: selectedCategories,
-          createdAt: new Date(),
-        });
+        // Centralized write
+        const res = await updateUserPreferredCategories(String(userId), selectedCategories);
+        if (!res.success) {
+          throw new Error(res.error || 'Failed to save preferred categories');
+        }
       }
       router.replace({
         pathname: '/(tabs)/home',

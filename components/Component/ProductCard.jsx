@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { AppState, Dimensions, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Icon from "react-native-vector-icons/Feather";
 import FAIcon from 'react-native-vector-icons/FontAwesome'; // added
-import { getDocument, getUserCart, removeCartItem, updateCartItemQuantity, updateDocument } from '../../Firebase/Firebase';
+import { getUserCart, removeCartItem, updateCartItemQuantity } from '../../Firebase/Firebase'; // removed getDocument, updateDocument
 import { darkTheme, lightTheme } from '../../Theme/Component/ProductCardTheme';
 
 const { width } = Dimensions.get('window');
@@ -24,6 +24,8 @@ const ProductCard = ({
   customTheme = null,
   currentUser,
   onShowAlert,
+  isFavorite = false, // new prop
+  onFavoriteToggle = () => {} // new prop
 }) => {
   const router = useRouter();
   
@@ -31,7 +33,6 @@ const ProductCard = ({
   const [theme, setTheme] = useState(customTheme || lightTheme);
   const [appState, setAppState] = useState(AppState.currentState);
   const [cartItems, setCartItems] = useState([]);
-  const [favorites, setFavorites] = useState([]);
   
   // Check if item is in stock
   const isInStock = item.stockQuantity === undefined || item.stockQuantity > 0;
@@ -95,30 +96,14 @@ const ProductCard = ({
     }
   }, [customTheme]);
 
-  // Fetch cart and favorites data when user changes
+  // Fetch cart data when user changes
   useEffect(() => {
     if (currentUser) {
       fetchUserCart();
-      fetchUserFavorites();
     } else {
       setCartItems([]);
-      setFavorites([]);
     }
   }, [currentUser]);
-
-  const fetchUserFavorites = async () => {
-    if (!currentUser) return;
-    try {
-      const userDoc = await getDocument('Users', currentUser.uid);
-      if (userDoc.success && userDoc.data && userDoc.data.Fav) {
-        setFavorites(userDoc.data.Fav);
-      } else {
-        setFavorites([]);
-      }
-    } catch (error) {
-      setFavorites([]);
-    }
-  };
 
   const fetchUserCart = async () => {
     if (!currentUser) return;
@@ -207,30 +192,14 @@ const ProductCard = ({
     }
   };
 
-  // Toggle favorite
+  // Toggle favorite now delegates to parent
   const toggleFavorite = async () => {
     if (!currentUser) {
       return onShowAlert('Please sign in to add to favorites', 'error');
     }
-
     try {
-      const isCurrentlyFavorite = favorites.includes(item.id);
-      let updatedFavorites;
-
-      if (isCurrentlyFavorite) {
-        updatedFavorites = favorites.filter(id => id !== item.id);
-        onShowAlert('Removed from favorites');
-      } else {
-        updatedFavorites = [...favorites, item.id];
-        onShowAlert('Added to favorites');
-      }
-
-      await updateDocument('Users', currentUser.uid, {
-        Fav: updatedFavorites
-      });
-
-      setFavorites(updatedFavorites);
-    } catch (error) {
+      onFavoriteToggle && onFavoriteToggle(item.id);
+    } catch {
       onShowAlert('Failed to update favorites', 'error');
     }
   };
@@ -238,10 +207,6 @@ const ProductCard = ({
   const getCartQuantity = (productId) => {
     const cartItem = cartItems.find(c => c.productId === productId);
     return cartItem ? cartItem.quantity : 0;
-  };
-
-  const isFavorite = (productId) => {
-    return favorites.includes(productId);
   };
 
   // Cart button display
@@ -370,7 +335,7 @@ const ProductCard = ({
           <FAIcon
             name="heart"
             size={22}
-            color={isFavorite(item.id) ? '#e53935' : '#d1d1d1'}
+            color={isFavorite ? '#e53935' : '#d1d1d1'}
           />
         </TouchableOpacity>
 

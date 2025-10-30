@@ -11,7 +11,7 @@ import {
     View,
 } from "react-native";
 import MiniAlert from "../../components/Component/MiniAlert";
-import { auth, getUserData, updateDocument } from "../../Firebase/Firebase";
+import { auth, loadCachedPreferredCategories, syncAvailableCategories, updateUserPreferredCategories } from "../../Firebase/Firebase";
 import { darkTheme, lightTheme } from "../../Theme/ProfileTabs/SettingsTheme";
 
 interface SettingItemProps {
@@ -101,46 +101,16 @@ const Settings = () => {
     };
 
     const loadAvailableCategories = async () => {
-        try {
-            const raw = await AsyncStorage.getItem('AvilableCategory');
-            let arr: unknown[];
-            try {
-                arr = JSON.parse(raw || "[]");
-            } catch {
-                arr = raw ? [raw] : [];
-            }
-            const parsed: Category[] = arr.map((c: any, idx: number): Category | null => {
-                if (!c) return null;
-                if (typeof c === 'string') {
-                    const stripped = c.replace(/^\s*\{?\s*/, '').replace(/\s*\}?\s*$/, '');
-                    const [namePart] = stripped.split(',');
-                    const name = (namePart || '').trim();
-                    if (!name) return null;
-                    return { id: `pm-${idx}`, name };
-                }
-                if (typeof c === 'object') {
-                    const name = c.categoryname || c.categoryName || c.name || c.category || c.title || '';
-                    const id = c.id || c._id || `pm-${idx}`;
-                    if (!name) return null;
-                    return { id: String(id), name: String(name) };
-                }
-                return null;
-            }).filter((cat): cat is Category => !!cat);
-            setAvailableCategories(parsed);
-        } catch {
-            setAvailableCategories([]);
+        const { success, data: cats } = await syncAvailableCategories();
+        if (success && cats.length > 0) {
+            setAvailableCategories(cats as Category[]);
         }
     };
 
     const loadUserPreferredCategories = async () => {
         try {
-            const userObjectJson = await AsyncStorage.getItem('UserObject');
-            if (userObjectJson) {
-                const userObject = JSON.parse(userObjectJson);
-                if (userObject && Array.isArray(userObject.preferredCategories)) {
-                    setSelectedCategories(userObject.preferredCategories.map((name: string) => String(name)));
-                }
-            }
+            const cats = await loadCachedPreferredCategories();
+            setSelectedCategories(cats);
         } catch {}
     };
 
@@ -167,15 +137,16 @@ const Settings = () => {
         if (!auth.currentUser) return;
         setSavingCategories(true);
         try {
-            const result = await updateDocument("Users", auth.currentUser.uid, { preferredCategories: selectedCategories });
-            if (result.success) {
-                const userData = await getUserData(auth.currentUser.uid);
-                if (userData) {
-                    await AsyncStorage.setItem('UserObject', JSON.stringify(userData));
-                }
+            const res = await updateUserPreferredCategories(auth.currentUser.uid, selectedCategories);
+            if (res.success) {
                 setShowDropdown(false);
+                showAlert("Saved successfully", "success");
+            } else {
+                showAlert(res.error || "Failed to save categories", "error");
             }
-        } catch {}
+        } catch {
+            showAlert("Failed to save categories", "error");
+        }
         setSavingCategories(false);
     };
 

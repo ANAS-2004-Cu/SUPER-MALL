@@ -1,11 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useLocalSearchParams } from 'expo-router';
-import React, { useEffect, useState } from "react";
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
+import React, { useCallback, useEffect, useState } from "react";
 import { AppState, FlatList, RefreshControl, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Icon from "react-native-vector-icons/Feather";
 import MiniAlert from '../../components/Component/MiniAlert';
 import ProductCard from '../../components/Component/ProductCard';
-import { getCollection, onAuthStateChange } from '../../Firebase/Firebase';
+import { getCollection, listenToUserFavorites, loadCachedCategories, onAuthStateChange, syncAvailableCategories, toggleFavorite } from '../../Firebase/Firebase';
 import FilterModal from '../../Modal/FilterModal';
 import { darkTheme, lightTheme } from '../../Theme/Tabs/ProductsTheme';
 
@@ -43,6 +43,9 @@ const ProductList = () => {
   // client-side pagination state
   const [page, setPage] = useState(1);
   const pageSize = 20;
+
+  // centralized favorites state
+  const [favoritesList, setFavoritesList] = useState([]);
 
   const applyDiscount = (price, discount = 0) => Math.floor(price - (price * discount) / 100);
 
@@ -103,8 +106,12 @@ const ProductList = () => {
           setMaxPrice(roundedPrice);
           setPriceRange([0, roundedPrice]);
         }
-        await fetchProductsManage();
-        await loadAvailableCategoriesFromStorage();
+        const { success, data: cats } = await syncAvailableCategories();
+        if (success && cats.length > 0) {
+          setCategories(['All', ...new Set(cats.map(c => c.name))]);
+        } else {
+          setCategories(['All']);
+        }
       }
     } finally {
       setIsRefreshing(false);
@@ -129,7 +136,12 @@ const ProductList = () => {
   useEffect(() => {
     checkTheme();
     const themeCheckInterval = setInterval(checkTheme, 1000);
-    const unsubscribeAuth = onAuthStateChange(setCurrentUser);
+    const unsubscribeAuth = onAuthStateChange(async (u) => {
+      setCurrentUser(u);
+      if (!u) {
+        setFavoritesList([]);
+      }
+    });
 
     getCollection("products").then(result => {
       if (result.success) {
@@ -141,15 +153,34 @@ const ProductList = () => {
           setPriceRange([0, roundedPrice]);
         }
       }
-      fetchProductsManage();
-      loadAvailableCategoriesFromStorage();
     });
+
+    (async () => {
+      const { success, data: cats } = await syncAvailableCategories();
+      if (success && cats.length > 0) {
+        setCategories(['All', ...new Set(cats.map(c => c.name))]);
+      } else {
+        setCategories(['All']);
+      }
+    })();
 
     return () => {
       unsubscribeAuth();
       clearInterval(themeCheckInterval);
     };
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      const loadCats = async () => {
+        const { data: cats } = await loadCachedCategories();
+        if (cats && cats.length > 0) {
+          setCategories(['All', ...new Set(cats.map(c => c.name))]);
+        }
+      };
+      loadCats();
+    }, [])
+  );
 
   useEffect(() => {
     if (params.searchTerm) {
@@ -191,6 +222,21 @@ const ProductList = () => {
       setSectionTitle(null);
     }
   }, [params.sectionIds, params.sectionTitle]);
+
+  useEffect(() => {
+    const userId = currentUser?.uid;
+    if (userId) {
+      // Start the listener
+      const unsubscribe = listenToUserFavorites(userId, (favoritesArray) => {
+        setFavoritesList(favoritesArray);
+      });
+      
+      // Return the cleanup function
+      return () => unsubscribe();
+    } else {
+      setFavoritesList([]);
+    }
+  }, [currentUser]);
 
   const applyFilters = (filters) => {
     // reset pagination whenever filters applied
@@ -259,70 +305,6 @@ const ProductList = () => {
     filterTopSelling,
     filterNewArrival
   ]);
-
-  const fetchProductsManage = async () => {
-    try {
-      const response = await getCollection("Manage");
-      if (response.success && Array.isArray(response.data) && response.data.length > 0) {
-        const doc = response.data[0];
-        const rawCats =
-          doc.AvilableCategory;
-        if (rawCats !== null) {
-          try {
-            await AsyncStorage.setItem('AvilableCategory', JSON.stringify(rawCats));
-          } catch (e) {
-            console.warn('Failed to save AvilableCategory to AsyncStorage', e);
-          }
-        }
-        setFilterTopSelling(Boolean(doc.TopSelling && doc.TopSelling.length > 0) ? filterTopSelling : filterTopSelling);
-      }
-    } catch (e) {
-    }
-  };
-
-  const loadAvailableCategoriesFromStorage = async () => {
-    try {
-      const raw = await AsyncStorage.getItem('AvilableCategory');
-      if (!raw) {
-        setCategories(['All']);
-        return;
-      }
-
-      let arr;
-      try {
-        arr = JSON.parse(raw);
-      } catch {
-        arr = [raw];
-      }
-
-      if (!Array.isArray(arr) || arr.length === 0) {
-        setCategories(['All']);
-        return;
-      }
-
-      const parsedNames = arr
-        .map((c, idx) => {
-          if (!c) return null;
-          if (typeof c === 'string') {
-            const stripped = c.replace(/^\s*\{?\s*/, '').replace(/\s*\}?\s*$/, '');
-            const [namePart] = stripped.split(',');
-            const name = (namePart || '').trim();
-            return name || null;
-          }
-          if (typeof c === 'object') {
-            const name = c.categoryname || c.categoryName || c.name || c.category || c.title || '';
-            return name || null;
-          }
-          return null;
-        })
-        .filter(Boolean);
-
-      const final = ['All', ...new Set(parsedNames)];
-      setCategories(final.length > 0 ? final : ['All']);
-    } catch {
-      setCategories(['All']);
-    }
-  };
 
   const getFilteredAndSortedProducts = () => {
     // Curated section view: authoritative even if empty
@@ -447,6 +429,16 @@ const ProductList = () => {
     });
   };
 
+  const handleFavoriteToggle = async (productId) => {
+    try {
+      if (!currentUser?.uid) {
+        showAlert('Please sign in to add to favorites', 'error');
+        return;
+      }
+      await toggleFavorite(currentUser.uid, productId);
+    } catch { /* silent */ }
+  };
+
   const filteredProducts = getFilteredAndSortedProducts();
 
   // derive paginated subset and "has more" flag
@@ -518,6 +510,8 @@ const ProductList = () => {
             customTheme={theme}
             currentUser={currentUser}
             onShowAlert={showAlert}
+            isFavorite={favoritesList.includes(item.id)}
+            onFavoriteToggle={handleFavoriteToggle}
           />
         )}
         contentContainerStyle={styles(theme).listContainer}

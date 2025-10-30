@@ -2,7 +2,6 @@ import { AntDesign, Feather, FontAwesome, Ionicons, MaterialIcons } from '@expo/
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, router, useFocusEffect } from 'expo-router';
-import { arrayRemove } from 'firebase/firestore';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -13,7 +12,7 @@ import {
   View
 } from 'react-native';
 import MiniAlert from '../../components/Component/MiniAlert';
-import { auth, getDocument, updateDocument } from '../../Firebase/Firebase';
+import { auth, getDocument, listenToUserFavorites, toggleFavorite } from '../../Firebase/Firebase';
 import DeleteModal from '../../Modal/DeleteModal';
 import { darkTheme, lightTheme } from '../../Theme/ProfileTabs/WishlistTheme';
 
@@ -58,62 +57,21 @@ const Wishlist = () => {
   const calculateDiscountedPrice = (price: number, discount = 0) => 
     discount > 0 ? price - (price * discount / 100) : price;
 
-  const fetchFavorites = async () => {
-    if (!userId) return;
-    
-    try {
-      setLoading(true);
-      setError('');
-      
-      const userResult = await getDocument("Users", userId);
-      if (!userResult.success) {
-        setError('Failed to fetch user data');
-        return;
-      }
-
-      const favoriteIds = (userResult.data as UserData)?.Fav || [];
-      if (!favoriteIds.length) {
-        setFavorites([]);
-        return;
-      }
-
-      const productPromises = [...favoriteIds].reverse().map(async (productId: string) => {
-        const productResult = await getDocument("products", productId);
-        return productResult.success ? { id: productId, ...productResult.data } as Product : null;
-      });
-
-      const productsData = await Promise.all(productPromises);
-      setFavorites(productsData.filter(Boolean) as Product[]);
-    } catch (err) {
-      setError('Failed to load favorites');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const removeFromFavorites = async () => {
     if (!selectedProduct?.id || !userId) return;
 
     setDeleteLoading(true);
     try {
-      const updateResult = await updateDocument("Users", userId, {
-        Fav: arrayRemove(selectedProduct.id)
-      });
-
-      if (updateResult.success) {
-        setFavorites(prev => prev.filter(item => item.id !== selectedProduct.id));
-        setAlertMsg(`${selectedProduct.name.split(' ').slice(0, 2).join(' ')} removed from favorites`);
-        setAlertType('success');
-        setTimeout(() => setDeleteModalVisible(false), 2000);
-      } else {
-        setAlertMsg("Failed to remove item from favorites");
-        setAlertType('error');
-      }
+      await toggleFavorite(userId, selectedProduct.id);
+      setDeleteModalVisible(false);
+      setAlertMsg(`${selectedProduct.name.split(' ').slice(0, 2).join(' ')} removed from favorites`);
+      setAlertType('success');
     } catch (err) {
       setAlertMsg("Failed to remove item from favorites");
       setAlertType('error');
     } finally {
       setDeleteLoading(false);
+      setSelectedProduct(null);
     }
   };
 
@@ -206,7 +164,7 @@ const Wishlist = () => {
           <Ionicons name="alert-circle-outline" size={70} color={theme.colors.accent.tertiary} />
           <Text style={theme.styles.emptyTitle}>Something went wrong</Text>
           <Text style={theme.styles.emptyText}>{error}</Text>
-          <TouchableOpacity style={theme.styles.retryButton} onPress={fetchFavorites} activeOpacity={0.7}>
+          <TouchableOpacity style={theme.styles.retryButton} onPress={() => {}} activeOpacity={0.7}>
             <Text style={theme.styles.retryButtonText}>Try Again</Text>
             <AntDesign name="reload" size={20} color="white" />
           </TouchableOpacity>
@@ -256,14 +214,43 @@ const Wishlist = () => {
   }, []);
 
   useEffect(() => {
-    fetchFavorites();
+    if (!userId) {
+      setFavorites([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    const unsubscribe = listenToUserFavorites(userId, async (favoriteIds: string | any[]) => {
+      try {
+        setError('');
+        if (!favoriteIds || favoriteIds.length === 0) {
+          setFavorites([]);
+          setLoading(false);
+          return;
+        }
+
+        const productPromises = [...favoriteIds].reverse().map(async (productId: string) => {
+          const productResult = await getDocument("products", productId);
+          return productResult.success ? ({ id: productId, ...productResult.data } as Product) : null;
+        });
+
+        const productsData = await Promise.all(productPromises);
+        setFavorites(productsData.filter(Boolean) as Product[]);
+      } catch (err) {
+        setError('Failed to load favorites');
+      } finally {
+        setLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
   }, [userId]);
 
   useFocusEffect(
     useCallback(() => {
       loadTheme();
-      fetchFavorites();
-    }, [userId])
+    }, [])
   );
 
   return (

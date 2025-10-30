@@ -7,7 +7,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { darkTheme, lightTheme } from '../../Theme/Tabs/ChatBotTheme';
 import context from '../ChatBot/context';
 
-const GOOGLE_API_KEY = 'AIzaSyDN0TUfk_ll_ADfxtCVByEzUsEPAiZhhvA';
+const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_API_KEY}`;
 
 const suggestions = [

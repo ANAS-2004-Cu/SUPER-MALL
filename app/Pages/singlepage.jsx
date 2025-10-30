@@ -1,10 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { getAuth } from 'firebase/auth';
-import { arrayRemove, arrayUnion, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import React, { useCallback, useEffect, useState } from "react";
 import { FlatList, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { auth, db, getCollection, updateCartItemQuantity } from "../../Firebase/Firebase";
+import { auth, db, getCollection, isProductInCart, listenToUserFavorites, toggleFavorite, updateCartItemQuantity } from "../../Firebase/Firebase";
 import Review from '../../components/Component/Review';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -67,6 +67,8 @@ const ProductDetails = () => {
     const currentUser = auth.currentUser;
     const userId = currentUser ? currentUser.uid : null;
 
+    const [favoritesList, setFavoritesList] = useState([]);
+
     const formatPrice = (price) => {
         return price ? price.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") : "0";
     };
@@ -83,7 +85,6 @@ const ProductDetails = () => {
         return Math.floor(price - (price * discountPercentage) / 100);
     };
 
-    // Add: same helper used by ProductCard to compute max allowed
     const getMaxAllowedForProduct = (p = {}) => {
         const stock = Number(p.stockQuantity);
         const perOrder = Number(p.AvilableQuantityBerOeder);
@@ -118,67 +119,75 @@ const ProductDetails = () => {
             }
         };
 
-        const checkFavoriteStatus = async () => {
-            if (!userId) {
-                setIsFavorite(false);
+        const checkInCart = async () => {
+            if (!userId || !id) {
+                setIsInCart(false);
                 return;
             }
-
             try {
-                const userDocRef = doc(db, "Users", userId);
-                const userDoc = await getDoc(userDocRef);
-
-                if (userDoc.exists()) {
-                    const userData = userDoc.data();
-                    const favoritesList = userData.Fav || [];
-                    setIsFavorite(favoritesList.includes(id));
-                }
+                const inCart = await isProductInCart(userId, id); 
+                setIsInCart(inCart);
             } catch (error) {
-                console.error("Error checking favorite status:", error);
+                console.error("Error checking cart status:", error);
+                setIsInCart(false);
             }
-        };
-
-        const checkInCart = async () => {
-            try {
-                const cu = getAuth().currentUser;
-                if (!cu || !id) return setIsInCart(false);
-                const cartDocRef = doc(db, 'Users', cu.uid, 'cart', id);
-                const cartDocSnap = await getDoc(cartDocRef);
-                setIsInCart(cartDocSnap.exists());
-            } catch { setIsInCart(false); }
         };
 
         getProduct();
-        checkFavoriteStatus();
         checkInCart();
-    }, [id, userId]);
+
+        const currentUserId = auth.currentUser?.uid;
+        let unsubscribe = () => {};
+
+        if (currentUserId) {
+            unsubscribe = listenToUserFavorites(currentUserId, (favoritesArray) => {
+                setFavoritesList(favoritesArray);
+                if (id) {
+                    setIsFavorite(favoritesArray.includes(id));
+                }
+            });
+        } else {
+            setFavoritesList([]);
+            setIsFavorite(false);
+        }
+        
+        return () => unsubscribe();
+
+    }, [id, auth.currentUser]);
 
     const handleFavorite = async () => {
         if (!userId) {
             showAlert1('Please login to add items to your favorites', 'error');
             return;
         }
-
         try {
-            const userDocRef = doc(db, "Users", userId);
-
-            if (isFavorite) {
-                await updateDoc(userDocRef, {
-                    Fav: arrayRemove(id)
-                });
-                setIsFavorite(false);
-                showAlert1(`${String(product?.name).split(' ').slice(0, 2).join(' ')} Removed from favorites!`, 'error');
-            } else {
-                await updateDoc(userDocRef, {
-                    Fav: arrayUnion(id)
-                });
-                setIsFavorite(true);
-                showAlert1(`${String(product?.name).split(' ').slice(0, 2).join(' ')} Added to favorites!`, "success");
-            }
+            const res = await toggleFavorite(userId, id);
+            if (!res.success) throw new Error(res.error || 'Failed');
+            showAlert1(
+                `${String(product?.name).split(' ').slice(0, 2).join(' ')} ${res.newStatus ? 'Added to favorites!' : 'Removed from favorites!'}`,
+                res.newStatus ? 'success' : 'error'
+            );
         } catch (error) {
-            console.error("Error updating favorites:", error);
             showAlert1("Error", "Could not update favorites. Please try again.");
         }
+    };
+
+    const handleFavoriteToggle = async (productId) => {
+        if (!userId) {
+            showAlert1('Please login to add items to your favorites', 'error');
+            return;
+        }
+        try {
+            const res = await toggleFavorite(userId, productId);
+            if (!res.success) return;
+
+            const target = relatedProducts.find(p => String(p.id) === String(productId)) || product;
+            const label = String(target?.name || 'Item').split(' ').slice(0, 2).join(' ');
+            showAlert1(
+              `${label} ${res.newStatus ? 'Added to favorites!' : 'Removed from favorites!'}`,
+              res.newStatus ? 'success' : 'error'
+            );
+        } catch { /* silent */ }
     };
 
     const handleAddToCart = async () => {
@@ -198,7 +207,6 @@ const ProductDetails = () => {
             return;
         }
 
-        // Block if out of stock (same behavior as cards)
         const stock = Number(product?.stockQuantity);
         const isInStock = isNaN(stock) || stock > 0;
         if (!isInStock) {
@@ -212,7 +220,6 @@ const ProductDetails = () => {
             const currentQty = cartDocSnap.exists() ? Number(cartDocSnap.data()?.quantity || 0) : 0;
             const newQty = currentQty + 1;
 
-            // Enforce max allowed based on stock and per-order limit
             const maxAllowed = getMaxAllowedForProduct(product);
             if (newQty > maxAllowed) {
                 if (!isNaN(Number(product?.AvilableQuantityBerOeder)) && maxAllowed === Number(product?.AvilableQuantityBerOeder)) {
@@ -225,7 +232,6 @@ const ProductDetails = () => {
                 return;
             }
 
-            // Store/update cart like ProductCard
             await updateCartItemQuantity(cu.uid, id, newQty);
 
             setIsInCart(true);
@@ -297,40 +303,38 @@ const ProductDetails = () => {
                 <View style={styles.productHeader}>
                     <Text style={[styles.name, { color: theme.textPrimary }]}>{product?.name}</Text>
 
-                    {/* price block with discount conditional */}
                     {Number(product?.discount) > 0 ? (
-                      <>
-                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                          <Text style={[styles.originalPrice, { color: theme.textSecondary }]}>
-                            {formatPrice(product?.price)} EGP
-                          </Text>
-                          <View style={[styles.discountBadge, { backgroundColor: theme.discountBadgeBg }]}>
-                            <Text style={[styles.discountText, { color: theme.discountBadgeText }]}>
-                              -{product?.discount}%
+                        <>
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <Text style={[styles.originalPrice, { color: theme.textSecondary }]}>
+                                    {formatPrice(product?.price)} EGP
+                                </Text>
+                                <View style={[styles.discountBadge, { backgroundColor: theme.discountBadgeBg }]}>
+                                    <Text style={[styles.discountText, { color: theme.discountBadgeText }]}>
+                                        -{product?.discount}%
+                                    </Text>
+                                </View>
+                            </View>
+                            <Text style={[styles.price1, { color: theme.priceAfter }]}>
+                                {formatPrice(applyDiscount(product?.price, product?.discount))} EGP
                             </Text>
-                          </View>
-                        </View>
-                        <Text style={[styles.price1, { color: theme.priceAfter }]}>
-                          {formatPrice(applyDiscount(product?.price, product?.discount))} EGP
-                        </Text>
-                      </>
+                        </>
                     ) : (
-                      <Text style={[styles.price1, { color: theme.price }]}>
-                        {formatPrice(product?.price)} EGP
-                      </Text>
+                        <Text style={[styles.price1, { color: theme.price }]}>
+                            {formatPrice(product?.price)} EGP
+                        </Text>
                     )}
 
-                    {/* stock info */}
                     {typeof product?.stockQuantity !== 'undefined' && (
-                      <View style={{ marginTop: 8 }}>
-                        {Number(product?.stockQuantity) <= 5
-                          ? <Text style={{ color: '#e67e22', fontWeight: '600' }}>
-                              Only {Number(product?.stockQuantity)} left!
-                            </Text>
-                          : <Text style={{ color: '#2E7D32', fontWeight: '600' }}>
-                              In stock
-                            </Text>}
-                      </View>
+                        <View style={{ marginTop: 8 }}>
+                            {Number(product?.stockQuantity) <= 5
+                                ? <Text style={{ color: '#e67e22', fontWeight: '600' }}>
+                                    Only {Number(product?.stockQuantity)} left!
+                                </Text>
+                                : <Text style={{ color: '#2E7D32', fontWeight: '600' }}>
+                                    In stock
+                                </Text>}
+                        </View>
                     )}
                 </View>
 
@@ -368,25 +372,26 @@ const ProductDetails = () => {
                                 <ProductCard
                                     item={item}
                                     currentUser={currentUser}
-                                    onShowAlert={(m, t) => {}}
+                                    onShowAlert={showAlert1}
+                                    isFavorite={favoritesList.includes(item.id)}
+                                    onFavoriteToggle={handleFavoriteToggle}
                                     customTheme={{
-                                      // minimal mapping to ProductCard theme contract
-                                      cardBackground: theme.cardBackground,
-                                      cardShadowColor: '#000',
-                                      cardBorderColor: '#eee',
-                                      titleColor: theme.textPrimary,
-                                      priceContainerBackground: theme.sectionBg,
-                                      originalPriceColor: theme.textSecondary,
-                                      priceColor: theme.price,
-                                      discountBadgeBackground: theme.discountBadgeBg,
-                                      discountBadgeTextColor: theme.discountBadgeText,
-                                      fullWidthButtonBackground: theme.accent,
-                                      addToCartTextColor: theme.textPrimary,
-                                      quantityTextColor: theme.textPrimary,
-                                      quantityButtonBackground: theme.sectionBg,
-                                      cartIconColor: theme.textPrimary,
-                                      inStockColor: '#2E7D32',
-                                      outOfStockColor: '#d9534f',
+                                        cardBackground: theme.cardBackground,
+                                        cardShadowColor: '#000',
+                                        cardBorderColor: '#eee',
+                                        titleColor: theme.textPrimary,
+                                        priceContainerBackground: theme.sectionBg,
+                                        originalPriceColor: theme.textSecondary,
+                                        priceColor: theme.price,
+                                        discountBadgeBackground: theme.discountBadgeBg,
+                                        discountBadgeTextColor: theme.discountBadgeText,
+                                        fullWidthButtonBackground: theme.accent,
+                                        addToCartTextColor: theme.textPrimary,
+                                        quantityTextColor: theme.textPrimary,
+                                        quantityButtonBackground: theme.sectionBg,
+                                        cartIconColor: theme.textPrimary,
+                                        inStockColor: '#2E7D32',
+                                        outOfStockColor: '#d9534f',
                                     }}
                                 />
                             )}
