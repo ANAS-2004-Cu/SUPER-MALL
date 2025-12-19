@@ -5,19 +5,20 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, router } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Dimensions, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
-import { auth, createQuery, getCollection, getUserData, updateDocument } from '../../Firebase/Firebase';
 import { darkTheme, lightTheme } from '../../Theme/ProfileTabs/EditProfileTheme';
 import MiniAlert from '../../components/Component/MiniAlert';
+import { useUserStore } from '../../store/userStore';
+import { checkUsernameExists, updateUserData } from '../services/DBAPI';
 
 const { width } = Dimensions.get('window');
 const IMGBB_API_KEY = "5f368fdc294d3cd3ddc0b0e9297a10fb";
 
 const EditProfile = () => {
+  const user = useUserStore((state) => state.user);
   const [image, setImage] = useState<string | null>(null);
-  const [userData, setUserData] = useState<any>(null);
-  const [fullname, setFullname] = useState<string | null>(null);
-  const [username, setUsername] = useState<string | null>(null);
-  const [num, setNum] = useState<string | null>(null);
+  const [fullname, setFullname] = useState<string>('');
+  const [username, setUsername] = useState<string>('');
+  const [num, setNum] = useState<string>('');
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
   const [alertType, setAlertType] = useState<'success' | 'error'>('success');
   const [loading, setLoading] = useState<boolean>(false);
@@ -29,8 +30,16 @@ const EditProfile = () => {
 
   useEffect(() => {
     loadTheme();
-    fetchUserData();
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      setImage(user.image || null);
+      setUsername(user.username || '');
+      setFullname((user as any).fullname || '');
+      setNum(user.phone || '');
+    }
+  }, [user]);
 
   const loadTheme = async () => {
     try {
@@ -38,14 +47,6 @@ const EditProfile = () => {
       setTheme(themeMode === '2' ? darkTheme : lightTheme);
     } catch (error) {
       console.error('Error loading theme:', error);
-    }
-  };
-
-  const fetchUserData = async () => {
-    const currentUser = auth.currentUser;
-    if (currentUser) {
-      const data = await getUserData(currentUser.uid);
-      setUserData(data);
     }
   };
 
@@ -90,15 +91,18 @@ const EditProfile = () => {
   };
 
   const validateForm = () => {
-    const newErrors: any = {};
+    const newErrors: { username?: string; fullname?: string; phone?: string } = {};
+    const trimmedUsername = username.trim();
+    const trimmedFullname = fullname.trim();
+    const trimmedPhone = num.trim();
 
-    if (username && (username.length < 3 || username.length > 20)) {
+    if (trimmedUsername && (trimmedUsername.length < 3 || trimmedUsername.length > 20)) {
       newErrors.username = "Username must be between 3 and 20 characters";
     }
-    if (num && !/^\d{11}$/.test(num)) {
+    if (trimmedPhone && !/^\d{11}$/.test(trimmedPhone)) {
       newErrors.phone = "Please enter a valid 11-digit phone number";
     }
-    if (fullname && fullname.length < 2) {
+    if (trimmedFullname && trimmedFullname.length < 2) {
       newErrors.fullname = "Full name must be at least 2 characters";
     }
 
@@ -107,12 +111,11 @@ const EditProfile = () => {
   };
 
   const checkUsernameAvailability = async (newUsername: string) => {
-    if (newUsername === userData?.username) return true;
-
-    const usernameQuery = createQuery('username', '==', newUsername);
-    const existingUsers = await getCollection('Users', [usernameQuery]);
-
-    return !(existingUsers.success && existingUsers.data && existingUsers.data.length > 0);
+    if (!user) return false;
+    const currentUsername = user.username || '';
+    if (newUsername === currentUsername) return true;
+    const exists = await checkUsernameExists(newUsername);
+    return !exists;
   };
 
   const uploadImage = async (imageUri: string) => {
@@ -130,42 +133,42 @@ const EditProfile = () => {
   };
 
   const prepareUpdates = async () => {
-    const updates: any = {};
+    if (!user) return {};
 
-    if (image) {
+    const updates: Record<string, any> = {};
+    const trimmedUsername = username.trim();
+    const trimmedFullname = fullname.trim();
+    const trimmedPhone = num.trim();
+
+    if (image && image !== user.image) {
       updates.image = await uploadImage(image);
     }
 
-    if (username) updates.username = username;
-    if (num) updates.phone = num;
-    if (fullname) updates.fullname = fullname;
+    if (trimmedUsername && trimmedUsername !== user.username) {
+      updates.username = trimmedUsername;
+    }
+
+    if (trimmedPhone && trimmedPhone !== user.phone) {
+      updates.phone = trimmedPhone;
+    }
+
+    if (trimmedFullname && trimmedFullname !== (user as any).fullname) {
+      updates.fullname = trimmedFullname;
+    }
 
     return updates;
   };
 
-  const updateUserProfile = async () => {
-    const currentUser = auth.currentUser;
-    if (!currentUser) {
+  const handleSave = async () => {
+    Keyboard.dismiss();
+
+    const userId = (user as any)?.uid || (user as any)?.id;
+
+    if (!user || !userId) {
       showAlert("No user logged in", "error");
       router.replace("../Login");
       return;
     }
-
-    const updates = await prepareUpdates();
-
-    if (Object.keys(updates).length > 0) {
-      const updateResult = await updateDocument("Users", currentUser.uid, updates);
-      if (!updateResult.success) throw new Error(updateResult.error);
-    }
-
-    const updatedUserData = await getUserData(currentUser.uid);
-    if (updatedUserData) {
-      await AsyncStorage.setItem('UserObject', JSON.stringify(updatedUserData));
-    }
-  };
-
-  const handleSave = async () => {
-    Keyboard.dismiss();
 
     if (!validateForm()) {
       showAlert("Please fix the errors in the form", "error");
@@ -175,12 +178,21 @@ const EditProfile = () => {
     setLoading(true);
 
     try {
-      if (username && !(await checkUsernameAvailability(username))) {
+      const trimmedUsername = username.trim();
+      if (trimmedUsername && !(await checkUsernameAvailability(trimmedUsername))) {
         showAlert("Username is already taken", "error");
         return;
       }
 
-      await updateUserProfile();
+      const updates = await prepareUpdates();
+
+      if (Object.keys(updates).length > 0) {
+        const updateResult = await updateUserData(userId, updates);
+        if (!updateResult.success) {
+          throw new Error(updateResult.error);
+        }
+        useUserStore.getState().setUser({ ...user, ...updates });
+      }
 
       showAlert("Profile updated successfully!", "success", 2000);
       setTimeout(() => {
@@ -203,7 +215,7 @@ const EditProfile = () => {
     }).start();
   };
 
-  const renderInputField = (label: string, value: string | null, setter: (value: string) => void, placeholder: string, icon: string, error?: string, keyboardType?: string) => (
+  const renderInputField = (label: string, value: string, setter: (value: string) => void, placeholder: string | undefined, icon: string, error?: string, keyboardType?: string) => (
     <View style={styles.inputGroup}>
       <Text style={[styles.inputLabel, { color: theme.inputLabelColor }]}>
         {label}
@@ -229,6 +241,7 @@ const EditProfile = () => {
         )}
         <TextInput
           style={[styles.inputbox, { color: theme.inputTextColor }]}
+          value={value}
           placeholder={placeholder}
           onChangeText={setter}
           placeholderTextColor={theme.placeholderColor}
@@ -293,7 +306,7 @@ const EditProfile = () => {
 
                 <View style={styles.profileImageContainer}>
                   <TouchableOpacity onPress={() => setImageModalVisible(true)} style={styles.imageWrapper}>
-                    <Image source={{ uri: image || userData?.image }} style={styles.logo} />
+                    <Image source={{ uri: image || user?.image || '' }} style={styles.logo} />
                     <View style={[styles.editBadge, { backgroundColor: theme.editBadgeColor }]}>
                       <Ionicons name="camera" size={20} color="white" />
                     </View>
@@ -304,9 +317,9 @@ const EditProfile = () => {
                 </View>
 
                 <View style={styles.formContainer}>
-                  {renderInputField("Username", username, setUsername, userData?.username, "account", errors.username)}
-                  {renderInputField("Full Name", fullname, setFullname, userData?.fullname, "person", errors.fullname)}
-                  {renderInputField("Phone Number", num, setNum, userData?.phone, "phone", errors.phone, "phone-pad")}
+                  {renderInputField("Username", username, setUsername, "Enter username", "account", errors.username)}
+                  {renderInputField("Full Name", fullname, setFullname, "Enter full name", "person", errors.fullname)}
+                  {renderInputField("Phone Number", num, setNum, "Enter phone number", "phone", errors.phone, "phone-pad")}
                 </View>
               </View>
 

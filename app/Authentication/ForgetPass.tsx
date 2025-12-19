@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Dimensions, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import MiniAlert from '../../components/Component/MiniAlert';
-import { resetPassword } from '../../Firebase/Firebase';
+import { resetPassword } from '../services/DBAPI.tsx';
 import { darkTheme, lightTheme } from '../../Theme/Auth/ForgetPassTheme';
 
 const ForgetPass = () => {

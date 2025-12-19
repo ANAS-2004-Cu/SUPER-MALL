@@ -1,37 +1,46 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-// Remove direct Firestore update imports
-// import { doc, updateDoc } from 'firebase/firestore';
-import React, { useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { Dimensions, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import ModernAlert from '../../components/Component/ModernAlert';
-// Replace db/getCollection usage with centralized service
-import { /* db, getCollection */ syncAvailableCategories, updateUserPreferredCategories } from '../../Firebase/Firebase';
+import MiniAlert from '../../components/Component/MiniAlert';
+import { useUserStore } from '../../store/userStore';
+import { darkTheme, lightTheme } from '../../Theme/Pages/CategorySelectionTheme';
+import { updateUserData } from '../services/DBAPI.tsx';
 
 const { width } = Dimensions.get('window');
-const cardWidth = width / 2 - 20;
+const cardWidth = (width - 60) / 2;
 
 const CategorySelection = () => {
   const router = useRouter();
-  const { userId } = useLocalSearchParams();
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [loading, setLoading] = useState(false);
   const [alertVisible, setAlertVisible] = useState(false);
-  const [alertConfig, setAlertConfig] = useState({
-    title: '',
-    message: '',
-    type: 'info',
-    primaryButtonText: 'OK',
-    secondaryButtonText: '',
-    onPrimaryPress: () => { },
-    onSecondaryPress: () => { }
-  });
+  const [alertMessage, setAlertMessage] = useState('');
+  const [alertType, setAlertType] = useState('success');
 
   const [availableCategories, setAvailableCategories] = useState([]);
   const [loadingCats, setLoadingCats] = useState(true);
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [theme, setTheme] = useState(lightTheme);
 
-  const showAlert = (config) => {
-    setAlertConfig(config);
+  useEffect(() => {
+    const loadTheme = async () => {
+      try {
+        const themeMode = await AsyncStorage.getItem('ThemeMode');
+        setTheme(themeMode === '2' ? darkTheme : lightTheme);
+      } catch (error) {
+        console.error('Error loading theme:', error);
+      }
+    };
+    loadTheme();
+    const intervalId = setInterval(loadTheme, 1000);
+    return () => clearInterval(intervalId);
+  }, []);
+
+  const showAlert = (message, type = 'error') => {
+    setAlertMessage(message);
+    setAlertType(type);
     setAlertVisible(true);
   };
 
@@ -40,12 +49,46 @@ const CategorySelection = () => {
 
   useEffect(() => {
     (async () => {
-      setLoadingCats(true);
-      const { success, data: cats } = await syncAvailableCategories();
-      if (success && cats.length > 0) {
-        setAvailableCategories(cats);
+      try {
+        const user = useUserStore.getState().user;
+        setCurrentUserId(user?.uid || null);
+      } catch {
+        setCurrentUserId(null);
       }
-      setLoadingCats(false);
+    })();
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      setLoadingCats(true);
+      try {
+        const manageData = await AsyncStorage.getItem('unUpadtingManageDocs');
+        if (manageData) {
+          const parsedData = JSON.parse(manageData);
+          const categoriesArray = parsedData?.AvilableCategory || [];
+          // Convert string format "name,url" to object format {name, image}
+          const formattedCategories = categoriesArray.map((item, index) => {
+            if (typeof item === 'string' && item.includes(',')) {
+              const [name, image] = item.split(',');
+              return {
+                id: index.toString(),
+                name: name.trim(),
+                image: image.trim()
+              };
+            }
+            return item; // If already an object, return as is
+          });
+          
+          setAvailableCategories(formattedCategories);
+        } else {
+          setAvailableCategories([]);
+        }
+      } catch (error) {
+        console.error("Error loading categories:", error);
+        setAvailableCategories([]);
+      } finally {
+        setLoadingCats(false);
+      }
     })();
   }, []);
 
@@ -59,46 +102,45 @@ const CategorySelection = () => {
 
   const handleContinue = async () => {
     if (selectedCategories.length === 0) {
-      showAlert({
-        title: 'Notice',
-        message: 'Please select at least one category',
-        type: 'warning',
-        primaryButtonText: 'OK',
-      });
+      showAlert('Please select at least one category', 'warning');
       return;
     }
 
     setLoading(true);
     try {
-      if (userId) {
-        // Centralized write
-        const res = await updateUserPreferredCategories(String(userId), selectedCategories);
-        if (!res.success) {
-          throw new Error(res.error || 'Failed to save preferred categories');
-        }
+      if (!currentUserId) {
+        throw new Error('Missing user identifier');
       }
-      router.replace({
-        pathname: '/(tabs)/home',
-        params: { categories: JSON.stringify(selectedCategories) },
+
+      const updateResult = await updateUserData(String(currentUserId), {
+        preferredCategories: selectedCategories,
       });
+      if (!updateResult.success) {
+        throw new Error(updateResult.error || 'Failed to save preferred categories');
+      }
+
+      // Update Zustand store with the new preferred categories
+      const currentUser = useUserStore.getState().user;
+      if (currentUser && currentUser.uid === currentUserId) {
+        useUserStore.getState().setUser({
+          ...currentUser,
+          preferredCategories: selectedCategories,
+        });
+      }
     } catch (error) {
       console.error("Error saving preferred categories:", error);
-      showAlert({
-        title: 'Error',
-        message: 'An error occurred while saving your preferences. Please try again.',
-        type: 'error',
-        primaryButtonText: 'OK',
-      });
+      showAlert('An error occurred while saving your preferences. Please try again.', 'error');
     } finally {
       setLoading(false);
+      router.replace('../(tabs)/home');
     }
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, theme.container]}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Choose Your Favorite Categories</Text>
-        <Text style={styles.headerSubtitle}>
+        <Text style={[styles.headerTitle, theme.headerTitle]}>Choose Your Favorite Categories</Text>
+        <Text style={[styles.headerSubtitle, theme.headerSubtitle]}>
           Select categories you&apos;re interested in so we can provide personalized recommendations for you
         </Text>
       </View>
@@ -106,16 +148,17 @@ const CategorySelection = () => {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <View style={styles.categoriesContainer}>
           {loadingCats && availableCategories.length === 0 ? (
-            <Text style={{ textAlign: 'center', width: '100%', color: '#666' }}>Loading categories...</Text>
+            <Text style={[{ textAlign: 'center', width: '100%' }, theme.loadingText]}>Loading categories...</Text>
           ) : availableCategories.length === 0 ? (
-            <Text style={{ textAlign: 'center', width: '100%', color: '#666' }}>No categories available</Text>
+            <Text style={[{ textAlign: 'center', width: '100%' }, theme.loadingText]}>No categories available</Text>
           ) : (
             availableCategories.map((category) => (
               <TouchableOpacity
                 key={category.id || category.name}
                 style={[
                   styles.categoryCard,
-                  selectedCategories.includes(category.name) && styles.selectedCard
+                  theme.categoryCard,
+                  selectedCategories.includes(category.name) && { ...styles.selectedCard, ...theme.selectedCard }
                 ]}
                 onPress={() => toggleCategory(category.name)}
               >
@@ -127,37 +170,37 @@ const CategorySelection = () => {
                     </View>
                   )}
                 </View>
-                <Text style={styles.categoryName}>{category.name}</Text>
+                <Text style={[styles.categoryName, theme.categoryName]}>{category.name}</Text>
               </TouchableOpacity>
             ))
           )}
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, theme.footer]}>
         <TouchableOpacity
-          style={[styles.continueButton, selectedCategories.length === 0 && styles.disabledButton]}
+          style={[
+            styles.continueButton,
+            theme.continueButton,
+            selectedCategories.length === 0 && { ...styles.disabledButton, ...theme.disabledButton }
+          ]}
           onPress={handleContinue}
           disabled={loading}
         >
-          <Text style={styles.continueButtonText}>
+          <Text style={[styles.continueButtonText, theme.continueButtonText]}>
             {loading ? 'Saving...' : 'Continue'}
           </Text>
           {!loading && <Ionicons name="arrow-forward" size={20} color="#fff" style={{ marginLeft: 5 }} />}
         </TouchableOpacity>
       </View>
 
-      <ModernAlert
-        visible={alertVisible}
-        title={alertConfig.title}
-        message={alertConfig.message}
-        type={alertConfig.type}
-        primaryButtonText={alertConfig.primaryButtonText}
-        secondaryButtonText={alertConfig.secondaryButtonText}
-        onPrimaryPress={alertConfig.onPrimaryPress}
-        onSecondaryPress={alertConfig.onSecondaryPress}
-        onClose={() => setAlertVisible(false)}
-      />
+      {alertVisible && (
+        <MiniAlert
+          message={alertMessage}
+          type={alertType}
+          onHide={() => setAlertVisible(false)}
+        />
+      )}
     </View>
   );
 };
@@ -172,8 +215,9 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    marginBottom: 20,
-    marginTop: 20,
+    marginBottom: 25,
+    marginTop: 30,
+    paddingHorizontal: 10,
   },
   headerTitle: {
     fontSize: 22,
@@ -190,7 +234,8 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
   },
   scrollContent: {
-    paddingBottom: 100,
+    paddingBottom: 120,
+    paddingTop: 10,
   },
   categoriesContainer: {
     flexDirection: 'row',
@@ -199,44 +244,65 @@ const styles = StyleSheet.create({
   },
   categoryCard: {
     width: cardWidth,
-    marginBottom: 15,
-    borderRadius: 12,
+    marginBottom: 10,
+    borderRadius: 16,
     backgroundColor: '#f9f9f9',
-    padding: 10,
+    padding: 12,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#eee',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   selectedCard: {
     borderColor: 'rgb(247, 207, 174)',
-    borderWidth: 2,
+    borderWidth: 2.5,
     backgroundColor: '#FFF9F4',
+    shadowOpacity: 0.2,
+    elevation: 5,
   },
   imageContainer: {
     position: 'relative',
     width: '100%',
-    height: 120,
-    marginBottom: 10,
+    height: 140,
+    marginBottom: 12,
+    borderRadius: 12,
+    overflow: 'hidden',
   },
   categoryImage: {
     width: '100%',
     height: '100%',
-    borderRadius: 8,
+    borderRadius: 12,
     resizeMode: 'cover',
   },
   checkmarkContainer: {
     position: 'absolute',
-    top: 5,
-    right: 5,
+    top: 8,
+    right: 8,
     backgroundColor: 'rgb(247, 207, 174)',
-    borderRadius: 12,
-    padding: 2,
+    borderRadius: 20,
+    padding: 4,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 4,
   },
   categoryName: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
     color: '#333',
     textAlign: 'center',
+    paddingHorizontal: 4,
   },
   footer: {
     position: 'absolute',

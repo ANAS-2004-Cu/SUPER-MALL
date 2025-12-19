@@ -5,7 +5,13 @@ import { AppState, FlatList, RefreshControl, StyleSheet, Text, TextInput, Toucha
 import Icon from "react-native-vector-icons/Feather";
 import MiniAlert from '../../components/Component/MiniAlert';
 import ProductCard from '../../components/Component/ProductCard';
-import { getCollection, listenToUserFavorites, loadCachedCategories, onAuthStateChange, syncAvailableCategories, toggleFavorite } from '../../Firebase/Firebase';
+import {
+  getFavorites,
+  getManageConfig,
+  getProducts,
+  onAuthChange as onAuthChangeBackend,
+  toggleFavorite as toggleFavoriteBackend,
+} from '../services/backend.ts';
 import FilterModal from '../../Modal/FilterModal';
 import { darkTheme, lightTheme } from '../../Theme/Tabs/ProductsTheme';
 
@@ -97,21 +103,22 @@ const ProductList = () => {
     try {
       // reset pagination on manual refresh
       setPage(1);
-      const result = await getCollection("products");
-      if (result.success) {
-        setProducts(result.data);
-        if (result.data.length > 0) {
-          const highestPrice = Math.max(...result.data.map(product => product.price));
-          const roundedPrice = Math.ceil(highestPrice / 100) * 100;
-          setMaxPrice(roundedPrice);
-          setPriceRange([0, roundedPrice]);
-        }
-        const { success, data: cats } = await syncAvailableCategories();
-        if (success && cats.length > 0) {
-          setCategories(['All', ...new Set(cats.map(c => c.name))]);
-        } else {
-          setCategories(['All']);
-        }
+      // TODO replaced firebase call: "const result = await getCollection(\"products\");"
+      const fetchedProducts = await getProducts();
+      setProducts(fetchedProducts);
+      if (fetchedProducts.length > 0) {
+        const highestPrice = Math.max(...fetchedProducts.map(product => product.price));
+        const roundedPrice = Math.ceil(highestPrice / 100) * 100;
+        setMaxPrice(roundedPrice);
+        setPriceRange([0, roundedPrice]);
+      }
+
+      // TODO replaced firebase call: "const { success, data: cats } = await syncAvailableCategories();"
+      const manageConfig = await getManageConfig();
+      if (manageConfig.success && manageConfig.categories.length > 0) {
+        setCategories(['All', ...new Set(manageConfig.categories.map(c => c.name))]);
+      } else {
+        setCategories(['All']);
       }
     } finally {
       setIsRefreshing(false);
@@ -136,29 +143,30 @@ const ProductList = () => {
   useEffect(() => {
     checkTheme();
     const themeCheckInterval = setInterval(checkTheme, 1000);
-    const unsubscribeAuth = onAuthStateChange(async (u) => {
+    // TODO replaced firebase call: "const unsubscribeAuth = onAuthStateChange(async (u) => {"
+    const unsubscribeAuth = onAuthChangeBackend(async (u) => {
       setCurrentUser(u);
       if (!u) {
         setFavoritesList([]);
       }
     });
 
-    getCollection("products").then(result => {
-      if (result.success) {
-        setProducts(result.data);
-        if (result.data.length > 0) {
-          const highestPrice = Math.max(...result.data.map(product => product.price));
-          const roundedPrice = Math.ceil(highestPrice / 100) * 100;
-          setMaxPrice(roundedPrice);
-          setPriceRange([0, roundedPrice]);
-        }
+    // TODO replaced firebase call: "getCollection(\"products\").then(result => {"
+    getProducts().then(productList => {
+      setProducts(productList);
+      if (productList.length > 0) {
+        const highestPrice = Math.max(...productList.map(product => product.price));
+        const roundedPrice = Math.ceil(highestPrice / 100) * 100;
+        setMaxPrice(roundedPrice);
+        setPriceRange([0, roundedPrice]);
       }
     });
 
     (async () => {
-      const { success, data: cats } = await syncAvailableCategories();
-      if (success && cats.length > 0) {
-        setCategories(['All', ...new Set(cats.map(c => c.name))]);
+      // TODO replaced firebase call: "const { success, data: cats } = await syncAvailableCategories();"
+      const manageConfig = await getManageConfig();
+      if (manageConfig.success && manageConfig.categories.length > 0) {
+        setCategories(['All', ...new Set(manageConfig.categories.map(c => c.name))]);
       } else {
         setCategories(['All']);
       }
@@ -173,7 +181,9 @@ const ProductList = () => {
   useFocusEffect(
     useCallback(() => {
       const loadCats = async () => {
-        const { data: cats } = await loadCachedCategories();
+        // TODO replaced firebase call: "const { data: cats } = await loadCachedCategories();"
+        const cachedConfig = await getManageConfig({ source: 'cache' });
+        const cats = cachedConfig.categories;
         if (cats && cats.length > 0) {
           setCategories(['All', ...new Set(cats.map(c => c.name))]);
         }
@@ -226,13 +236,19 @@ const ProductList = () => {
   useEffect(() => {
     const userId = currentUser?.uid;
     if (userId) {
-      // Start the listener
-      const unsubscribe = listenToUserFavorites(userId, (favoritesArray) => {
-        setFavoritesList(favoritesArray);
+      // TODO replaced firebase call: "const unsubscribe = listenToUserFavorites(userId, (favoritesArray) => {"
+      const maybeUnsubscribe = getFavorites(userId, {
+        subscribe: true,
+        onUpdate: (favoritesArray) => {
+          setFavoritesList(favoritesArray);
+        },
       });
-      
-      // Return the cleanup function
-      return () => unsubscribe();
+
+      return () => {
+        if (typeof maybeUnsubscribe === 'function') {
+          maybeUnsubscribe();
+        }
+      };
     } else {
       setFavoritesList([]);
     }
@@ -435,7 +451,8 @@ const ProductList = () => {
         showAlert('Please sign in to add to favorites', 'error');
         return;
       }
-      await toggleFavorite(currentUser.uid, productId);
+      // TODO replaced firebase call: "await toggleFavorite(currentUser.uid, productId);"
+      await toggleFavoriteBackend(currentUser.uid, productId);
     } catch { /* silent */ }
   };
 

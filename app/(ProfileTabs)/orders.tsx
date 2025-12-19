@@ -2,6 +2,7 @@ import { FontAwesome, Ionicons, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, router } from 'expo-router';
+import type { ComponentProps } from 'react';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -12,24 +13,41 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { auth, getUserData } from '../../Firebase/Firebase';
 import { darkTheme, lightTheme } from '../../Theme/ProfileTabs/OrdersTheme';
+import { useUserStore } from '../../store/userStore';
+import { fetchUserOrders } from '../services/DBAPI';
+
+type FirestoreTimestamp = {
+  seconds: number;
+  nanoseconds?: number;
+};
+
+type IoniconName = ComponentProps<typeof Ionicons>['name'];
 
 interface Product {
   id?: string;
+  productId?: string;
   name?: string;
   price?: number;
   image?: string;
   description?: string;
-  quantity?: number;
-  discount?: number;
+  quantity?: number | string;
+  discount?: number | string;
+  category?: string;
 }
 
 interface Order {
   id: string;
-  createdAt: string;
+  createdAt: FirestoreTimestamp | string | number | Date | null;
   OrderedProducts: Product[];
   orderTotal: number;
+  addressSnapshot?: Record<string, any> | null;
+  paymentMethod?: string;
+  paymentDetails?: Record<string, any> | null;
+  shippingFee?: number;
+  subtotal?: number;
+  total?: number;
+  walletPhone?: string;
 }
 
 const Orders = () => {
@@ -37,6 +55,8 @@ const Orders = () => {
   const [loading, setLoading] = useState(true);
   const [totalSpent, setTotalSpent] = useState(0);
   const [theme, setTheme] = useState(lightTheme);
+  const user = useUserStore((state) => state.user);
+  const userId = user?.uid || user?.id || null;
 
   const loadThemePreference = async () => {
     try {
@@ -47,98 +67,161 @@ const Orders = () => {
     }
   };
 
-  const calculateProductTotal = (product: Product) => {
-    const price = product.price || 0;
-    const quantity = product.quantity || 1;
-    const discount = product.discount || 0;
-    const subtotal = price * quantity;
-    return subtotal - (subtotal * discount / 100);
+  const normalizeNumberValue = (value: unknown, fallback: number) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
   };
+
+  const normalizeQuantityValue = (value: unknown) => {
+    const parsed = normalizeNumberValue(value, 1);
+    return parsed > 0 ? parsed : 1;
+  };
+
+  const normalizeDiscountValue = (value: unknown) => {
+    const parsed = normalizeNumberValue(value, 0);
+    if (parsed <= 0) {
+      return 0;
+    }
+    if (parsed > 100) {
+      return 100;
+    }
+    return parsed;
+  };
+
+  const getProductPricingDetails = (product: Product) => {
+    const price = normalizeNumberValue(product.price, 0);
+    const quantity = normalizeQuantityValue(product.quantity);
+    const discount = normalizeDiscountValue(product.discount);
+    const discountedUnitPrice = price - (price * discount / 100);
+
+    return {
+      price,
+      quantity,
+      discount,
+      discountedUnitPrice,
+      subtotal: discountedUnitPrice * quantity,
+    };
+  };
+
+  const calculateProductTotal = (product: Product) => getProductPricingDetails(product).subtotal;
 
   const calculateOrderTotal = (products: Product[]) => {
     return products.reduce((acc, product) => acc + calculateProductTotal(product), 0);
   };
 
-  const fetchUserOrders = async () => {
-    const userId = auth.currentUser?.uid;
-    if (!userId) {
-      setLoading(false);
-      return;
+  // userId is derived from the global store; no AsyncStorage lookup required
+
+  const handleOrderPress = (order: Order) => {
+    try {
+      const payload = buildOrderSummaryPayload(order);
+      const encoded = encodeURIComponent(JSON.stringify(payload));
+      router.push({
+        pathname: '../Pages/OrderSummary',
+        params: { order: encoded },
+      });
+    } catch (error) {
+      console.error('Error navigating to order summary:', error);
+    }
+  };
+
+  const formatDate = (dateValue: Order['createdAt']) => {
+    const fallbackText = 'Order Date Not Available';
+
+    if (!dateValue) {
+      return fallbackText;
     }
 
     try {
-      setLoading(true);
-      const userData = await getUserData(userId);
-      const userOrders = userData?.Orders || [];
-
-      if (!userOrders.length) {
-        setOrders([]);
-        setLoading(false);
-        return;
+      if (typeof dateValue === 'object' && dateValue !== null && 'seconds' in dateValue && typeof dateValue.seconds === 'number') {
+        const timestamp = dateValue.seconds * 1000 + Math.floor((dateValue.nanoseconds || 0) / 1_000_000);
+        return new Date(timestamp).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
       }
 
-      const ordersData = userOrders.map((order: any, index: number) => {
-        const orderedProducts = order.OrderedProducts || [];
-        const orderTotal = calculateOrderTotal(orderedProducts);
+      if (dateValue instanceof Date) {
+        return dateValue.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+      }
 
-        return {
-          id: order.id || `order_${index}`,
-          createdAt: order.createdAt || 'Unknown date',
-          OrderedProducts: orderedProducts.map((product: any, productIndex: number) => ({
-            id: product.productId || `product_${index}_${productIndex}`,
-            name: product.name,
-            price: product.price,
-            image: product.image,
-            description: product.description,
-            quantity: product.quantity || 1,
-            discount: product.discount || 0,
-            category: product.category || 'Uncategorized'
-          })),
-          orderTotal
-        };
-      });
+      if (typeof dateValue === 'number') {
+        return new Date(dateValue).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+      }
 
-      const total = ordersData.reduce((acc: number, order: Order) => acc + order.orderTotal, 0);
+      if (typeof dateValue === 'string') {
+        const trimmedDate = dateValue.trim();
+        if (!trimmedDate || trimmedDate === 'Unknown date' || trimmedDate === 'egsopjpgjeps0949') {
+          return fallbackText;
+        }
 
-      setOrders(ordersData);
-      setTotalSpent(total);
+        const parsedDate = Date.parse(trimmedDate);
+        if (!Number.isNaN(parsedDate)) {
+          return new Date(parsedDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+        }
+
+        return trimmedDate;
+      }
     } catch (error) {
-      console.error("Error fetching user orders:", error);
-    } finally {
-      setLoading(false);
+      console.error('Error formatting date:', error);
+      return fallbackText;
     }
+
+    return fallbackText;
   };
 
-  const navigateToProductDetail = (productId: string) => {
-    router.push({
-      pathname: '../Pages/singlepage',
-      params: { id: productId }
-    });
+  const buildOrderSummaryPayload = (order: Order) => ({
+    ...order,
+    createdAt: formatDate(order.createdAt),
+    paymentDetails: order.paymentDetails ? { ...order.paymentDetails } : null,
+    OrderedProducts: order.OrderedProducts.map(product => ({
+      ...product,
+      price: normalizeNumberValue(product.price, 0),
+      discount: normalizeDiscountValue(product.discount),
+      quantity: normalizeQuantityValue(product.quantity),
+    })),
+  });
+
+  const getPaymentBadgeConfig = (method?: string) => {
+    const normalizedMethod = method?.toLowerCase().trim() ?? '';
+
+    if (!normalizedMethod) {
+      return null;
+    }
+
+    if (normalizedMethod.includes('visa') || normalizedMethod.includes('card')) {
+      return { label: 'Card', icon: 'card-outline' as IoniconName, backgroundColor: '#1e88e5' };
+    }
+
+    if (normalizedMethod.includes('wallet') || normalizedMethod.includes('mobile')) {
+      return { label: 'Wallet', icon: 'wallet-outline' as IoniconName, backgroundColor: '#2e7d32' };
+    }
+
+    if (normalizedMethod.includes('cash')) {
+      return { label: 'Cash', icon: 'cash-outline' as IoniconName, backgroundColor: '#fb8c00' };
+    }
+
+    return { label: method || 'Payment', icon: 'card-outline' as IoniconName, backgroundColor: '#546e7a' };
   };
 
-  const formatDate = (dateString: string) => {
-    if (dateString === 'egsopjpgjeps0949' || dateString === 'Unknown date') {
-      return 'Order Date Not Available';
+  const renderPaymentMethodBadge = (method?: string) => {
+    const config = getPaymentBadgeConfig(method);
+    if (!config) {
+      return null;
     }
-    try {
-      return new Date(dateString).toLocaleDateString();
-    } catch {
-      return dateString;
-    }
+
+    return (
+      <View style={[styles.paymentBadge, { backgroundColor: config.backgroundColor }]}>
+        <Ionicons name={config.icon} size={14} color="#fff" />
+        <Text style={styles.paymentBadgeText}>{config.label}</Text>
+      </View>
+    );
   };
 
   const renderProductItem = ({ item }: { item: Product }) => {
-    const hasDiscount = item.discount && item.discount > 0;
-    const discountedPrice = hasDiscount
-      ? item.price! - (item.price! * item.discount! / 100)
-      : item.price;
-    const discountedSubtotal = calculateProductTotal(item);
+    const pricing = getProductPricingDetails(item);
+    const hasDiscount = pricing.discount > 0;
+    const discountedSubtotal = pricing.subtotal;
 
     return (
-      <TouchableOpacity
+      <View
         style={[styles.productItem, { backgroundColor: theme.cardBackground }]}
-        activeOpacity={0.8}
-        onPress={() => navigateToProductDetail(item.id || '')}
       >
         <View style={styles.productContent}>
           <View style={styles.imageContainer}>
@@ -167,26 +250,26 @@ const Orders = () => {
               {hasDiscount ? (
                 <View style={styles.discountContainer}>
                   <Text style={[styles.originalPrice, { color: theme.originalPriceColor }]}>
-                    ${item.price?.toFixed(2)}
+                    ${pricing.price.toFixed(2)}
                   </Text>
                   <Text style={[styles.discountedPrice, { color: theme.discountedPriceColor }]}>
-                    ${discountedPrice?.toFixed(2)}
+                    ${pricing.discountedUnitPrice.toFixed(2)}
                   </Text>
                   <View style={[styles.discountBadge, { backgroundColor: theme.discountBadgeBackground }]}>
                     <Text style={[styles.discountBadgeText, { color: theme.discountTextColor }]}>
-                      {item.discount}% OFF
+                      {pricing.discount}% OFF
                     </Text>
                   </View>
                 </View>
               ) : (
                 <Text style={[styles.regularPrice, { color: theme.priceColor }]}>
-                  ${item.price?.toFixed(2)}
+                  ${pricing.price.toFixed(2)}
                 </Text>
               )}
 
               <View style={[styles.quantityBadge, { backgroundColor: theme.quantityBadgeBackground }]}>
                 <Text style={[styles.quantityText, { color: theme.quantityTextColor }]}>
-                  Qty: {item.quantity}
+                  Qty: {pricing.quantity}
                 </Text>
               </View>
             </View>
@@ -196,20 +279,27 @@ const Orders = () => {
             </Text>
           </View>
         </View>
-      </TouchableOpacity>
+      </View>
     );
   };
 
   const renderOrderItem = ({ item }: { item: Order }) => (
-    <View style={[styles.orderCard, { backgroundColor: theme.cardBackground }]}>
+    <TouchableOpacity
+      style={[styles.orderCard, { backgroundColor: theme.cardBackground }]}
+      activeOpacity={0.85}
+      onPress={() => handleOrderPress(item)}
+    >
       <View style={styles.orderHeader}>
         <View style={styles.orderInfo}>
           <Text style={[styles.orderDate, { color: theme.textPrimary }]}>
             {formatDate(item.createdAt)}
           </Text>
-          <View style={[styles.orderStatusContainer, { backgroundColor: theme.orderStatusBackground }]}>
-            <Ionicons name="checkmark-circle" size={16} color={theme.iconColorSuccess} />
-            <Text style={[styles.orderStatusText, { color: theme.textSuccess }]}>Delivered</Text>
+          <View style={styles.orderMetaRow}>
+            <View style={[styles.orderStatusContainer, { backgroundColor: theme.orderStatusBackground }]}>
+              <Ionicons name="checkmark-circle" size={16} color={theme.iconColorSuccess} />
+              <Text style={[styles.orderStatusText, { color: theme.textSuccess }]}>Delivered</Text>
+            </View>
+            {renderPaymentMethodBadge(item.paymentMethod)}
           </View>
         </View>
         <Text style={[styles.orderTotal, { color: theme.subtotalValueColor }]}>
@@ -226,11 +316,109 @@ const Orders = () => {
           {renderProductItem({ item: product })}
         </View>
       ))}
-    </View>
+    </TouchableOpacity>
   );
 
   useEffect(() => {
-    fetchUserOrders();
+    let isMounted = true;
+
+    const loadOrders = async () => {
+      if (!userId) {
+        if (isMounted) {
+          setOrders([]);
+          setTotalSpent(0);
+          setLoading(false);
+        }
+        return;
+      }
+
+      if (isMounted) {
+        setLoading(true);
+      }
+
+      try {
+        const response = await fetchUserOrders(userId);
+        if (!response.success) {
+          throw new Error(response.error || 'Failed to fetch orders');
+        }
+
+        const userOrders = Array.isArray(response.orders) ? response.orders : [];
+
+        if (!userOrders.length) {
+          if (isMounted) {
+            setOrders([]);
+            setTotalSpent(0);
+          }
+          return;
+        }
+
+        const ordersData = userOrders.map((order: any, index: number) => {
+          const orderedProducts = Array.isArray(order.OrderedProducts) ? order.OrderedProducts : [];
+          const mappedProducts = orderedProducts.map((product: any, productIndex: number) => {
+            const price = normalizeNumberValue(product.price, 0);
+            const quantity = normalizeQuantityValue(product.quantity);
+            const discount = normalizeDiscountValue(product.discount);
+
+            return {
+              id: product.productId || product.id || `product_${index}_${productIndex}`,
+              productId: product.productId || product.id || `product_${index}_${productIndex}`,
+              name: product.name,
+              price,
+              image: product.image,
+              description: product.description,
+              quantity,
+              discount,
+              category: product.category || 'Uncategorized',
+            };
+          });
+
+          const orderSubtotal = calculateOrderTotal(mappedProducts);
+          const shippingFee = normalizeNumberValue(order.shippingFee, 0);
+          const subtotal = normalizeNumberValue(order.subtotal, orderSubtotal);
+          const total = normalizeNumberValue(order.total, subtotal + shippingFee);
+
+          return {
+            id: order.id || `order_${index}`,
+            createdAt: order.createdAt ?? null,
+            OrderedProducts: mappedProducts,
+            addressSnapshot: order.addressSnapshot || null,
+            paymentMethod: order.paymentMethod || 'Not provided',
+            paymentDetails: order.paymentDetails || null,
+            shippingFee,
+            subtotal,
+            total,
+            walletPhone: order.walletPhone ? String(order.walletPhone) : '',
+            orderTotal: total,
+          };
+        });
+
+        const totalSpentValue = ordersData.reduce((acc: number, order: Order) => acc + order.orderTotal, 0);
+
+        if (isMounted) {
+          setOrders(ordersData);
+          setTotalSpent(totalSpentValue);
+        }
+      } catch (error) {
+        console.error('Error fetching user orders:', error);
+        if (isMounted) {
+          setOrders([]);
+          setTotalSpent(0);
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadOrders();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [userId]);
+
+  useEffect(() => {
     loadThemePreference();
   }, []);
 
@@ -442,6 +630,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignSelf: 'flex-start',
   },
+  orderMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    marginTop: 0,
+  },
   orderStatusText: {
     fontSize: 12,
     fontWeight: '600',
@@ -455,6 +649,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     marginBottom: 12,
+  },
+  paymentBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginLeft: 8,
+  },
+  paymentBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#fff',
+    marginLeft: 4,
   },
   productItem: {
     borderRadius: 12,

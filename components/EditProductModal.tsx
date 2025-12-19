@@ -2,7 +2,6 @@ import { FontAwesome, Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
-import { doc, updateDoc } from 'firebase/firestore';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
@@ -15,7 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { db } from '../Firebase/Firebase';
+import { updateProduct } from '../app/services/backend';
 import MiniAlert from './Component/MiniAlert';
 
 interface EditingProduct {
@@ -60,7 +59,8 @@ const EditProductModal = ({
 
         setLoadingb(true);
         try {
-            await updateDoc(doc(db, 'products', editingProduct.id), {
+            // TODO replaced firebase call: "await updateDoc(doc(db, 'products', editingProduct.id), { ... });"
+            const response = await updateProduct(editingProduct.id, {
                 name: editingProduct.name,
                 price: parseFloat(editingProduct.price),
                 description: editingProduct.description,
@@ -68,6 +68,9 @@ const EditProductModal = ({
                 image: editingProduct.image,
                 discount: parseFloat(editingProduct.discount || '0'),
             });
+            if (!response.success) {
+                throw new Error(response.error || 'Failed to update product');
+            }
             setAlertMsg("Product updated successfully");
             setAlertType("success");
             setTimeout(() => {

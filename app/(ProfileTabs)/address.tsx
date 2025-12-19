@@ -2,13 +2,14 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { addUserAddress, auth as fbAuth, getUserAddresses as fbGetUserAddresses, updateUserAddress, updateUserAddresses } from '../../Firebase/Firebase';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import AddressModal from '../../Modal/AddressModal';
 import DeleteModal from '../../Modal/DeleteModal';
 import { darkTheme, lightTheme } from '../../Theme/ProfileTabs/AddressTheme';
 import MiniAlert from '../../components/Component/MiniAlert';
+import { useUserStore } from '../../store/userStore';
+import { updateUserData } from '../services/DBAPI';
 
 interface Address {
   id: string;
@@ -20,6 +21,29 @@ interface Address {
   Phone: string;
   isDefault: boolean;
 }
+
+const formatAddresses = (userAddresses: any[] = []): Address[] => (
+  userAddresses
+    .map((address: any, index: number) => ({
+      id: address?.id || `address-${index}`,
+      FullName: address?.FullName,
+      Street: address?.Street,
+      City: address?.City,
+      State: address?.State,
+      ZIP: address?.ZIP,
+      Phone: address?.Phone,
+      isDefault: Boolean(address?.isDefault),
+    }))
+    .sort((a, b) => (a.isDefault ? -1 : b.isDefault ? 1 : 0))
+);
+
+const sortAddresses = (list: Address[]): Address[] =>
+  [...list].sort((a, b) => {
+    if (a.isDefault === b.isDefault) {
+      return 0;
+    }
+    return a.isDefault ? -1 : 1;
+  });
 
 const AddressCard = ({ address, onEdit, onDelete, onSetDefault, theme }: {
   address: Address;
@@ -90,8 +114,12 @@ const EmptyAddresses = ({ theme }: { theme: any }) => (
 );
 
 const Address = () => {
-  const [addresses, setAddresses] = useState<Address[]>([]);
-  const [loading, setLoading] = useState(true);
+  const user = useUserStore((state) => state.user);
+  const setUserState = useUserStore((state) => state.setUser);
+  const userRef = useRef(user);
+  const [addresses, setAddresses] = useState<Address[]>(() => formatAddresses(user?.Addresses || []));
+  const userId = user?.uid || user?.id || "";
+  const [loading, setLoading] = useState(addresses.length === 0);
   const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -102,140 +130,133 @@ const Address = () => {
   const [alertMsg, setAlertMsg] = useState<string | null>(null);
   const [alertType, setAlertType] = useState<'success' | 'error'>('success');
   const [theme, setTheme] = useState(lightTheme);
+  const isLoadingAddresses = loading && !refreshing;
 
-  useEffect(() => {
-    loadTheme();
-    fetchUserAddresses();
+  const updateStoreAddresses = useCallback((next: Address[]) => {
+    if (!userRef.current) {
+      return;
+    }
+    const updatedUser = {
+      ...userRef.current,
+      Addresses: next,
+    };
+    userRef.current = updatedUser;
+    setUserState(updatedUser);
+  }, [setUserState]);
+
+  const showAlert = useCallback((message: string, type: 'success' | 'error' = 'success') => {
+    setAlertMsg(message);
+    setAlertType(type);
   }, []);
 
-  const loadTheme = async () => {
+  const loadTheme = useCallback(async () => {
     try {
       const themeMode = await AsyncStorage.getItem('ThemeMode');
       setTheme(themeMode === '2' ? darkTheme : lightTheme);
     } catch (error) {
       console.error('Error loading theme:', error);
     }
-  };
+  }, []);
 
-  const showAlert = (message: string, type: 'success' | 'error' = 'success') => {
-    setAlertMsg(message);
-    setAlertType(type);
-  };
+  // Enhanced persistAddresses: disables UI during update, adds rollback, and logs errors
+  const persistAddresses = useCallback(
+    async (next: Address[], successMessage: string) => {
+      const previousAddresses = Array.isArray(userRef.current?.Addresses)
+        ? userRef.current!.Addresses.map((addr) => ({ ...addr }))
+        : [];
 
-  const formatAddresses = (userAddresses: any[]) => {
-    return userAddresses
-      .map((address: any, index: number) => ({
-        id: address.id || `address-${index}`,
-        FullName: address.FullName || '',
-        Street: address.Street || '',
-        City: address.City || '',
-        State: address.State || '',
-        ZIP: address.ZIP || '',
-        Phone: address.Phone || '',
-        isDefault: address.isDefault || false,
-      }))
-      .sort((a: Address, b: Address) => (a.isDefault ? -1 : b.isDefault ? 1 : 0));
-  };
-
-  const fetchUserAddresses = async () => {
-    try {
-      setLoading(true);
-      const uid = fbAuth.currentUser?.uid;
-      if (!uid) {
-        setLoading(false);
-        setRefreshing(false);
-        return;
-      }
-      const userAddresses = await fbGetUserAddresses(uid);
-      const formattedAddresses = formatAddresses(userAddresses || []);
-      setAddresses(formattedAddresses);
-    } catch (error) {
-      showAlert("Failed to load addresses. Please try again.", 'error');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
-  const performAddressOperation = async (operation: () => Promise<boolean>, successMessage: string) => {
-    try {
-      const success = await operation();
-      if (success) {
-        await fetchUserAddresses();
-        showAlert(successMessage);
-        return true;
-      } else {
-        showAlert("Operation failed. Please try again.", 'error');
+      if (!userId) {
+        showAlert('Unable to update addresses. Please log in again.', 'error');
         return false;
       }
-    } catch (error) {
-      showAlert("Operation failed. Please try again.", 'error');
+
+      setLoading(true);
+      setAddresses(next);
+      updateStoreAddresses(next);
+
+      try {
+        const response = await updateUserData(userId, { Addresses: next });
+        if (response.success) {
+          showAlert(successMessage, 'success');
+          setLoading(false);
+          return true;
+        }
+
+        showAlert(response.error || 'Failed to update addresses. Please try again.', 'error');
+      } catch (error) {
+        console.error('Failed to persist addresses:', error);
+        showAlert('Failed to update addresses. Please try again.', 'error');
+      }
+
+      // Rollback UI state if update failed
+      setAddresses(previousAddresses);
+      updateStoreAddresses(previousAddresses);
+      setLoading(false);
       return false;
-    }
-  };
+    },
+    [showAlert, updateStoreAddresses, userId]
+  );
+
+  useEffect(() => {
+    loadTheme();
+  }, [loadTheme]);
 
   const confirmDeleteAddress = async () => {
     if (!selectedAddressId) return;
 
     setDeleteLoading(true);
-    const success = await performAddressOperation(
-      async () => {
-        const uid = fbAuth.currentUser?.uid;
-        if (!uid) return false;
-        const userAddresses = await fbGetUserAddresses(uid);
-        const filteredAddresses = (userAddresses || []).filter((addr: any) => addr.id !== selectedAddressId);
-        const res = await updateUserAddresses(uid, filteredAddresses);
-        return res.success;
-      },
-      "Address deleted successfully"
-    );
+    const updatedAddresses = addresses.filter((addr) => addr.id !== selectedAddressId);
+    const success = await persistAddresses(sortAddresses(updatedAddresses), 'Address deleted successfully');
 
     if (success) {
       setDeleteModalVisible(false);
     }
+
     setDeleteLoading(false);
     setSelectedAddressId(null);
   };
 
   const handleSetDefault = async (id: string) => {
-    const uid = fbAuth.currentUser?.uid;
-    if (!uid) return;
+    const target = addresses.find((addr) => addr.id === id);
+    if (!target) return;
 
-    const userAddresses = await fbGetUserAddresses(uid);
-    if (!userAddresses) return;
+    const updatedAddresses = target.isDefault
+      ? addresses.map((addr) => (addr.id === id ? { ...addr, isDefault: false } : addr))
+      : addresses.map((addr) => ({ ...addr, isDefault: addr.id === id }));
 
-    const addressToUpdate = userAddresses.find((addr: any) => addr.id === id);
-    if (!addressToUpdate) return;
+    const successMessage = target.isDefault
+      ? 'Default address removed'
+      : 'Default address updated successfully';
 
-    const isSettingAsDefault = !addressToUpdate.isDefault;
-
-    await performAddressOperation(
-      async () => {
-        const updatedAddresses = userAddresses.map((addr: any) => ({
-          ...addr,
-          isDefault: addr.id === id ? isSettingAsDefault : false
-        }));
-        const res = await updateUserAddresses(uid, updatedAddresses);
-        return res.success;
-      },
-      isSettingAsDefault ? "Default address updated successfully" : "Default address removed"
-    );
+    await persistAddresses(sortAddresses(updatedAddresses), successMessage);
   };
 
   const handleSubmitAddress = async (formData: Address) => {
-    const operation = async () => {
-      const res = isEditing ? await updateUserAddress(formData) : await addUserAddress(formData);
-      return !!res?.success;
+    const normalizedAddress: Address = {
+      ...formData,
+      id: formData.id || `address-${Date.now()}`,
     };
 
-    const success = await performAddressOperation(
-      operation,
+    let updatedAddresses = isEditing
+      ? addresses.map((addr) => (addr.id === normalizedAddress.id ? normalizedAddress : addr))
+      : [...addresses, normalizedAddress];
+
+    if (normalizedAddress.isDefault) {
+      updatedAddresses = updatedAddresses.map((addr) => ({
+        ...addr,
+        isDefault: addr.id === normalizedAddress.id,
+      }));
+    }
+
+    const success = await persistAddresses(
+      sortAddresses(updatedAddresses),
       `Address ${isEditing ? 'updated' : 'added'} successfully`
     );
 
     if (success) {
       setModalVisible(false);
       setCurrentAddress(null);
+      setIsEditing(false);
     }
   };
 
@@ -254,11 +275,6 @@ const Address = () => {
     setCurrentAddress(null);
     setIsEditing(false);
     setModalVisible(true);
-  };
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchUserAddresses();
   };
 
   const getDeleteWarningMessage = () => {
@@ -298,7 +314,7 @@ const Address = () => {
           <Text style={[styles.headerTitle, { color: theme.headerTitleColor }]}>My Addresses</Text>
         </View>
 
-        {loading && !refreshing ? (
+        {isLoadingAddresses ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={theme.loadingIndicatorColor} />
             <Text style={[styles.loadingText, { color: theme.loadingTextColor }]}>
@@ -309,14 +325,6 @@ const Address = () => {
           <ScrollView
             style={styles.addressList}
             showsVerticalScrollIndicator={false}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                colors={[theme.loadingIndicatorColor]}
-                tintColor={theme.loadingIndicatorColor}
-              />
-            }
           >
             {addresses.map(address => (
               <AddressCard
@@ -333,14 +341,6 @@ const Address = () => {
         ) : (
           <ScrollView
             contentContainerStyle={styles.emptyScrollContent}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                colors={[theme.loadingIndicatorColor]}
-                tintColor={theme.loadingIndicatorColor}
-              />
-            }
           >
             <EmptyAddresses theme={theme} />
           </ScrollView>

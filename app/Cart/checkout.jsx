@@ -4,8 +4,13 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import MiniAlert from '../../components/Component/MiniAlert';
-import { auth, getShippingFeeByCity, getUserAddresses, placeOrderFromCart } from '../../Firebase/Firebase';
 import { checkoutDarkTheme, checkoutLightTheme } from '../../Theme/Cart/checkoutTheme';
+import {
+  getCurrentUser,
+  getShippingFeeByCity,
+  getUserAddresses,
+  placeOrderFromCart,
+} from '../services/backend';
 
 const computeProductPricing = (product = {}) => {
   const base = Number(product.price) || 0;
@@ -59,7 +64,9 @@ const Checkout = () => {
   }, []);
 
   const fetchAddresses = useCallback(async () => {
-    const uid = auth.currentUser?.uid;
+    const user = getCurrentUser();
+    // TODO replaced firebase call: "const uid = auth.currentUser?.uid;"
+    const uid = user?.uid;
     if (!uid) return;
     const list = await getUserAddresses(uid);
     setAddresses(list);
@@ -87,7 +94,8 @@ const Checkout = () => {
     const init = async () => {
       setLoading(true);
       await loadTheme();
-      if (!auth.currentUser) {
+      // TODO replaced firebase call: "if (!auth.currentUser) {"
+      if (!getCurrentUser()) {
         showAlert('Login required', 'error');
         router.replace('/Authentication/Login');
         return;
@@ -103,6 +111,7 @@ const Checkout = () => {
       try {
         const city = selectedAddress?.City || '';
         if (!city) { setShippingFee(0); return; }
+        // TODO replaced firebase call: "const fee = await getShippingFeeByCity(city);"
         const fee = await getShippingFeeByCity(city);
         setShippingFee(fee);
       } catch { setShippingFee(0); }
@@ -126,6 +135,7 @@ const Checkout = () => {
       return;
     }
     if (paymentMethod === 'CASH') {
+      // TODO replaced firebase call: "const res = await placeOrderFromCart({"
       const res = await placeOrderFromCart({
         paymentMethod: 'CASH',
         addressSnapshot: selectedAddress,

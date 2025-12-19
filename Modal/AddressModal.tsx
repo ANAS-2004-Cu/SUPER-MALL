@@ -3,7 +3,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import MiniAlert from '../components/Component/MiniAlert';
-import { getAvailableRegions } from '../Firebase/Firebase';
 import { darkTheme, lightTheme } from '../Theme/Modal/AddressModalTheme';
 
 interface Address {
@@ -20,7 +19,7 @@ interface Address {
 interface AddressModalProps {
     visible: boolean;
     onClose: () => void;
-    onSubmit?: (formData: Address) => Promise<void>; // made optional
+    onSubmit: (formData: Address) => Promise<void>;
     currentAddress: Address | null;
     isEditing: boolean;
     loading: boolean;
@@ -63,14 +62,23 @@ const AddressModal: React.FC<AddressModalProps> = ({
         getThemeMode();
 
         const loadRegions = async () => {
+            if (!visible) return;
+
             try {
-                if (!visible) return;
-                const regions = await getAvailableRegions();
-                if (Array.isArray(regions) && regions.length) {
-                    setCityOptions(regions);
+                const cached = await AsyncStorage.getItem('unUpadtingManageDocs');
+                if (!cached) return;
+
+                const parsed = JSON.parse(cached);
+                const storedRegions = Array.isArray(parsed?.AvilableRegion) ? parsed.AvilableRegion : [];
+                const normalized = storedRegions
+                    .map((region: any) => String(region ?? '').trim())
+                    .filter((region: string | any[]) => region.length > 0);
+
+                if (normalized.length) {
+                    setCityOptions(normalized);
                 }
-            } catch {
-                // silently keep defaults
+            } catch (error) {
+                console.error('Failed to load available regions from storage:', error);
             }
         };
         loadRegions();
@@ -137,16 +145,7 @@ const AddressModal: React.FC<AddressModalProps> = ({
     const handleSubmit = async () => {
         if (!validateForm()) return;
         try {
-            if (onSubmit) {
-                await onSubmit(formData);
-            } else {
-                const { addUserAddress, updateUserAddress } = await import('../Firebase/Firebase');
-                const res = isEditing ? await updateUserAddress(formData) : await addUserAddress(formData);
-                if (!res?.success) {
-                    throw new Error('error' in res ? res.error : 'Failed');
-                }
-                onClose?.();
-            }
+            await onSubmit(formData);
         } catch {
             setAlertMsg('Failed to save address. Please try again.');
             setAlertType('error');

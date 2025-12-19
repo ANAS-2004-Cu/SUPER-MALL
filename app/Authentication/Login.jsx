@@ -1,12 +1,13 @@
 import { FontAwesome } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Dimensions, Linking, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import MiniAlert from '../../components/Component/MiniAlert';
-import { getUserData, signIn, syncUserPreferredCategories } from '../../Firebase/Firebase';
+import { useUserStore } from '../../store/userStore';
 import { darkTheme, lightTheme } from '../../Theme/Auth/LoginTheme';
+import { getUserData, signIn } from '../services/DBAPI.tsx';
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -66,14 +67,13 @@ const Login = () => {
       const result = await signIn(email, password);
 
       if (result.success) {
-        const user = result.user;
-        const userData = await getUserData(user.uid);
+        const userId = result.userId;
+        await AsyncStorage.setItem('LoginID', userId);
+        const userData = await getUserData(userId);
 
         if (userData) {
-          await AsyncStorage.setItem('UserObject', JSON.stringify(userData));
+          useUserStore.getState().login(userData);
           // Sync preferred categories to cache on login
-          await syncUserPreferredCategories(user.uid);
-
           if (userData?.isAdmin === true) {
             router.replace('/Admintabs/Admin');
           }

@@ -1,12 +1,24 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, AppState, FlatList, Image, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import Icon from "react-native-vector-icons/Feather";
 import MiniAlert from '../../components/Component/MiniAlert';
 import ProductCard from '../../components/Component/ProductCard';
-import { auth, createLimit, createOrderBy, getCollection, getUserCart, getUserData, listenToUserFavorites, loadCachedCategories, loadCachedPreferredCategories, syncAvailableCategories, toggleFavorite } from '../../Firebase/Firebase';
+import { useUserStore } from '../../store/userStore';
 import { darkTheme, lightTheme } from '../../Theme/Tabs/HomeTheme';
+import {
+  getCart,
+  getCurrentUser,
+  getFavorites,
+  getManageConfig,
+  getPreferredCategories,
+  getProducts,
+  getUserProfile,
+  onAuthChange,
+  toggleFavorite as toggleFavoriteBackend,
+} from '../services/backend.ts';
+import { fetchAdBanners } from '../services/DBAPI.tsx';
 
 const Categories = [
   { id: 1, name: "Mobile" },
@@ -25,7 +37,8 @@ const HomePage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
-  const currentUser = auth.currentUser;
+  // TODO replaced firebase call: "const currentUser = auth.currentUser;"
+  const [currentUser, setCurrentUser] = useState(() => getCurrentUser());
   const router = useRouter();
   const [alertMsg, setAlertMsg] = useState(null);
   const [alertType, setAlertType] = useState('success');
@@ -80,15 +93,26 @@ const HomePage = () => {
   }, []);
 
   useEffect(() => {
+    const unsubscribe = onAuthChange((user) => setCurrentUser(user));
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
     const userId = currentUser?.uid;
     if (userId) {
-      // Start the listener
-      const unsubscribe = listenToUserFavorites(userId, (favoritesArray) => {
-        setFavoritesList(favoritesArray);
+      // TODO replaced firebase call: "const unsubscribe = listenToUserFavorites(userId, (favoritesArray) => {"
+      const maybeUnsubscribe = getFavorites(userId, {
+        subscribe: true,
+        onUpdate: (favoritesArray) => {
+          setFavoritesList(favoritesArray);
+        },
       });
-      
-      // Return the cleanup function
-      return () => unsubscribe();
+
+      return () => {
+        if (typeof maybeUnsubscribe === 'function') {
+          maybeUnsubscribe();
+        }
+      };
     } else {
       setFavoritesList([]);
     }
@@ -106,13 +130,15 @@ const HomePage = () => {
 
   const handleCartPress = async () => {
     try {
-      const userJson = await AsyncStorage.getItem('UserObject');
-      const isLoggedIn = !!auth.currentUser || (!!userJson && userJson !== "undefined");
+      const user = useUserStore.getState().user;
+      // TODO replaced firebase call: "const isLoggedIn = !!auth.currentUser || (!!userJson && userJson !== \"undefined\");"
+      const isLoggedIn = !!getCurrentUser() || !!user;
       if (!isLoggedIn) {
         showAlert("Please login to access your cart", 'error');
         return;
       }
-      router.push("../Cart/cart");
+      // router.push("../Cart/cart");
+      router.push('../Cart/carts');
     } catch {
       showAlert("Please login to access your cart", 'error');
     }
@@ -141,7 +167,8 @@ const HomePage = () => {
 
   const fetchPreferredCategories = useCallback(async () => {
     try {
-      const cats = await loadCachedPreferredCategories();
+      // TODO replaced firebase call: "const cats = await loadCachedPreferredCategories();"
+      const cats = await getPreferredCategories();
       setPreferredCategories(cats);
     } catch {
       setPreferredCategories([]);
@@ -149,29 +176,43 @@ const HomePage = () => {
   }, []);
 
   const fetchRecommendedProducts = useCallback(async () => {
-    const categories = await loadCachedPreferredCategories();
+    // TODO replaced firebase call: "const categories = await loadCachedPreferredCategories();"
+    const categories = await getPreferredCategories();
     if (categories.length === 0) {
       setRecommendedProducts([]);
       return;
     }
     setPreferredCategories(categories);
     try {
-      const response = await getCollection("products");
-      if (response.success) {
-        const filtered = response.data.filter(product =>
-          categories.includes(product.category)
-        );
-        setRecommendedProducts(filtered.sort(() => Math.random() - 0.5).slice(0, 15));
-      }
+      // TODO replaced firebase call: "const response = await getCollection(\"products\");"
+      const productList = await getProducts();
+      const filtered = productList.filter(product =>
+        categories.includes(product.category)
+      );
+      setRecommendedProducts(filtered.sort(() => Math.random() - 0.5).slice(0, 15));
     } catch { }
+  }, []);
+
+  const fetchAdBannersData = useCallback(async () => {
+    try {
+      const response = await fetchAdBanners();
+      if (response.success && response.banners.length > 0) {
+        setAdBanners(response.banners);
+      } else {
+        setAdBanners([]);
+      }
+    } catch {
+      setAdBanners([]);
+    }
   }, []);
 
   const updateUserDataFromFirebase = useCallback(async () => {
     if (!currentUser) return;
     try {
-      const userData = await getUserData(currentUser.uid);
+      // TODO replaced firebase call: "const userData = await getUserData(currentUser.uid);"
+      const userData = await getUserProfile(currentUser.uid);
       if (userData) {
-        await AsyncStorage.setItem('UserObject', JSON.stringify(userData));
+        useUserStore.getState().setUser(userData);
         // After updating user data from firebase, reload preferred categories from cache
         await fetchPreferredCategories();
       }
@@ -193,22 +234,15 @@ const HomePage = () => {
   const fetchProducts = useCallback(async () => {
     try {
       setLoading(true);
-      const conditions = [
-        createOrderBy("createdAt", "desc"),
-        createLimit(20)
-      ];
-      const response = await getCollection("products", conditions);
-      if (response.success) {
-        setProducts(response.data);
-        setLoading(false);
-        setRefreshing(false);
-        return true;
-      } else {
-        setError("Unable to load products. Please try again later.");
-        setLoading(false);
-        setRefreshing(false);
-        return false;
-      }
+      // TODO replaced firebase call: "const response = await getCollection(\"products\", conditions);"
+      const productList = await getProducts({
+        orderBy: { field: 'createdAt', direction: 'desc' },
+        limit: 20,
+      });
+      setProducts(productList);
+      setLoading(false);
+      setRefreshing(false);
+      return true;
     } catch {
       setError("Something went wrong. Please try again later.");
       setLoading(false);
@@ -219,20 +253,23 @@ const HomePage = () => {
 
   const fetchAllProducts = useCallback(async () => {
     try {
-      const response = await getCollection("products");
-      if (response.success) {
-        setAllProducts(response.data);
-      }
+      // TODO replaced firebase call: "const response = await getCollection(\"products\");"
+      const productList = await getProducts();
+      setAllProducts(productList);
     } catch { }
   }, []);
 
   const loadCartCount = useCallback(async () => {
     try {
-      if (!auth.currentUser) {
+      // TODO replaced firebase call: "if (!auth.currentUser) {"
+      const user = getCurrentUser();
+      if (!user) {
         setCartCount(0);
         return;
       }
-      const items = await getUserCart(auth.currentUser.uid);
+      // TODO replaced firebase call: "const items = await getUserCart(auth.currentUser.uid);"
+      const cartSnapshot = await getCart(user.uid);
+      const items = cartSnapshot.items || [];
       const total = items.reduce((s, it) => s + (Number(it.quantity) || 1), 0);
       setCartCount(total);
     } catch {
@@ -242,8 +279,9 @@ const HomePage = () => {
 
   const checkLoginStatus = useCallback(async () => {
     try {
-      const userJson = await AsyncStorage.getItem('UserObject');
-      const logged = !!auth.currentUser || (userJson && userJson !== "undefined");
+      const user = useUserStore.getState().user;
+      // TODO replaced firebase call: "const logged = !!auth.currentUser || (userJson && userJson !== \"undefined\");"
+      const logged = !!getCurrentUser() || !!user;
       setIsLoggedIn(!!logged);
       if (logged) loadCartCount();
       else setCartCount(0);
@@ -258,9 +296,11 @@ const HomePage = () => {
     const start = async () => {
       await fetchProducts();
       updateUserDataFromFirebase();
-      const { success, data: cats } = await syncAvailableCategories();
-      if (success && cats.length > 0) {
-        setAvailableCategories(cats);
+      fetchAdBannersData();
+      // TODO replaced firebase call: "const { success, data: cats } = await syncAvailableCategories();"
+      const manageConfig = await getManageConfig();
+      if (manageConfig.success && manageConfig.categories.length > 0) {
+        setAvailableCategories(manageConfig.categories);
       } else {
         setAvailableCategories(Categories);
       }
@@ -271,14 +311,15 @@ const HomePage = () => {
         unsubscribe();
       }
     };
-  }, [fetchProducts, updateUserDataFromFirebase]);
+  }, [fetchProducts, updateUserDataFromFirebase, fetchAdBannersData]);
 
   useFocusEffect(
     useCallback(() => {
       const loadCats = async () => {
-        const { data: cats } = await loadCachedCategories();
-        if (cats && cats.length > 0) {
-          setAvailableCategories(cats);
+        // TODO replaced firebase call: "const { data: cats } = await loadCachedCategories();"
+        const cachedConfig = await getManageConfig({ source: 'cache' });
+        if (cachedConfig.categories && cachedConfig.categories.length > 0) {
+          setAvailableCategories(cachedConfig.categories);
         }
       };
       loadCats();
@@ -300,9 +341,11 @@ const HomePage = () => {
           updateUserDataFromFirebase(),
           fetchAllProducts(),
           checkLoginStatus(),
-          syncAvailableCategories().then(({ success, data: cats }) => {
-            if (success && cats.length > 0) {
-              setAvailableCategories(cats);
+          fetchAdBannersData(),
+          // TODO replaced firebase call: "syncAvailableCategories().then(({ success, data: cats }) => {"
+          getManageConfig().then((manageConfig) => {
+            if (manageConfig.success && manageConfig.categories.length > 0) {
+              setAvailableCategories(manageConfig.categories);
             } else {
               setAvailableCategories(Categories);
             }
@@ -314,15 +357,16 @@ const HomePage = () => {
         setRefreshing(false);
       }
     },
-    [fetchProducts, fetchRecommendedProducts, updateUserDataFromFirebase, fetchAllProducts, checkLoginStatus, loadCartCount]
+    [fetchProducts, fetchRecommendedProducts, updateUserDataFromFirebase, fetchAllProducts, checkLoginStatus, loadCartCount, fetchAdBannersData]
   );
 
   useEffect(() => {
     fetchAllProducts();
     (async () => {
-      const { success, data: cats } = await syncAvailableCategories();
-      if (success && cats.length > 0) {
-        setAvailableCategories(cats);
+      // TODO replaced firebase call: "const { success, data: cats } = await syncAvailableCategories();"
+      const manageConfig = await getManageConfig();
+      if (manageConfig.success && manageConfig.categories.length > 0) {
+        setAvailableCategories(manageConfig.categories);
       } else {
         setAvailableCategories(Categories);
       }
@@ -465,11 +509,14 @@ const HomePage = () => {
 
   const handleFavoriteToggle = async (productId) => {
     try {
-      if (!auth.currentUser) {
+      // TODO replaced firebase call: "if (!auth.currentUser) {"
+      const user = getCurrentUser();
+      if (!user) {
         showAlert("Please login to add items to your favorites", 'error');
         return;
       }
-      await toggleFavorite(auth.currentUser.uid, productId);
+      // TODO replaced firebase call: "await toggleFavorite(auth.currentUser.uid, productId);"
+      await toggleFavoriteBackend(user.uid, productId);
     } catch { }
   };
 

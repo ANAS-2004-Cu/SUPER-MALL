@@ -1,12 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Dimensions, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import MiniAlert from '../../components/Component/MiniAlert';
-import { createQuery, getCollection, getUserData, signUp } from '../../Firebase/Firebase';
+import { useUserStore } from '../../store/userStore';
 import { darkTheme, lightTheme } from '../../Theme/Auth/RegisterTheme';
+import { checkUsernameExists, getUserData, signUp } from '../services/DBAPI.tsx';
 
 const Register = () => {
   const [username, setUsername] = useState('');
@@ -75,10 +76,10 @@ const Register = () => {
     setLoading(true);
 
     try {
-      const usernameQuery = createQuery('username', '==', username);
-      const existingUsers = await getCollection('Users', [usernameQuery]);
+      // Check if username already exists
+      const usernameExists = await checkUsernameExists(username);
       
-      if (existingUsers.success && existingUsers.data.length > 0) {
+      if (usernameExists) {
         showAlert("Username is already used", "error");
         setLoading(false);
         return;
@@ -93,7 +94,10 @@ const Register = () => {
 
       const result = await signUp(email, password, userData);
       if (result.success) {
-        await AsyncStorage.setItem('UserObject', JSON.stringify(await getUserData(result.user.uid)));
+        const userId = result.userId;
+        await AsyncStorage.setItem('LoginID', userId);
+        const userDataFromDb = await getUserData(userId);
+        useUserStore.getState().login(userDataFromDb);
         if (result.verificationSent) {
           showAlert("Verification email sent. Please check your inbox (and spam).", "success");
         } else {
@@ -101,12 +105,7 @@ const Register = () => {
         }
 
         // Navigate to Onboarding -> CategorySelection after showing the alert
-        setTimeout(() => {
-          router.replace({
-            pathname: '/Onboarding',
-            params: { fromRegister: 'true', userId: result.user.uid },
-          });
-        }, 1200);
+        router.replace('../Pages/Onboarding');
       } else {
         if (result.error.includes("email-already-in-use")) {
           showAlert("This email already exists", "error");

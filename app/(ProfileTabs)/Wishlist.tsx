@@ -2,7 +2,7 @@ import { AntDesign, Feather, FontAwesome, Ionicons, MaterialIcons } from '@expo/
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, router, useFocusEffect } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -12,23 +12,21 @@ import {
   View
 } from 'react-native';
 import MiniAlert from '../../components/Component/MiniAlert';
-import { auth, getDocument, listenToUserFavorites, toggleFavorite } from '../../Firebase/Firebase';
 import DeleteModal from '../../Modal/DeleteModal';
+import { useUserStore } from '../../store/userStore';
 import { darkTheme, lightTheme } from '../../Theme/ProfileTabs/WishlistTheme';
+import { getProductById, updateUserData } from '../services/DBAPI';
 
 interface Product {
   id: string;
-  name: string;
-  price: number;
-  image: string;
+  name?: string;
+  price?: number;
+  image?: string;
   discount?: number;
-}
-
-interface UserData {
-  id: string;
-  Fav?: string[];
   [key: string]: any;
 }
+
+const EMPTY_FAVORITES: string[] = [];
 
 const Wishlist = () => {
   const [favorites, setFavorites] = useState<Product[]>([]);
@@ -40,8 +38,11 @@ const Wishlist = () => {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [theme, setTheme] = useState(lightTheme);
-
-  const userId = auth.currentUser?.uid;
+  const user = useUserStore((state) => state.user);
+  const setUser = useUserStore((state) => state.setUser);
+  const favoriteIds = Array.isArray(user?.Fav) ? (user?.Fav as string[]) : EMPTY_FAVORITES;
+  const favoriteIdsKey = useMemo(() => JSON.stringify(favoriteIds), [favoriteIds]);
+  const userId = user?.uid || user?.id || null;
 
   const loadTheme = async () => {
     try {
@@ -52,22 +53,35 @@ const Wishlist = () => {
     }
   };
 
-  const formatPrice = (price: number) => price?.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") || "0";
+  const formatPrice = (price?: number) => {
+    const normalizedPrice = typeof price === 'number' ? price : 0;
+    return normalizedPrice.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") || '0';
+  };
 
-  const calculateDiscountedPrice = (price: number, discount = 0) => 
+  const calculateDiscountedPrice = (price: number = 0, discount = 0) =>
     discount > 0 ? price - (price * discount / 100) : price;
 
   const removeFromFavorites = async () => {
-    if (!selectedProduct?.id || !userId) return;
+    if (!selectedProduct?.id || !userId || !user) return;
+
+    const filteredFavorites = favoriteIds.filter((favId) => favId !== selectedProduct.id);
 
     setDeleteLoading(true);
     try {
-      await toggleFavorite(userId, selectedProduct.id);
+      const response = await updateUserData(userId, { Fav: filteredFavorites });
+
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to update favorites');
+      }
+
+      setUser({ ...user, Fav: filteredFavorites });
+      setFavorites((prev) => prev.filter((product) => product.id !== selectedProduct.id));
       setDeleteModalVisible(false);
-      setAlertMsg(`${selectedProduct.name.split(' ').slice(0, 2).join(' ')} removed from favorites`);
+      const productName = selectedProduct.name?.split(' ').slice(0, 2).join(' ') || 'Item';
+      setAlertMsg(`${productName} removed from favorites`);
       setAlertType('success');
     } catch (err) {
-      setAlertMsg("Failed to remove item from favorites");
+      setAlertMsg('Failed to remove item from favorites');
       setAlertType('error');
     } finally {
       setDeleteLoading(false);
@@ -76,15 +90,16 @@ const Wishlist = () => {
   };
 
   const renderPrice = (item: Product) => {
-    const hasDiscount = item.discount && item.discount > 0;
-    const discountedPrice = calculateDiscountedPrice(item.price, item.discount);
+    const basePrice = typeof item.price === 'number' ? item.price : 0;
+    const hasDiscount = typeof item.discount === 'number' && item.discount > 0;
+    const discountedPrice = calculateDiscountedPrice(basePrice, item.discount);
 
     return (
       <View style={theme.styles.priceContainer}>
         {hasDiscount ? (
           <>
             <View style={theme.styles.priceRow}>
-              <Text style={theme.styles.originalPrice}>{formatPrice(item.price)} EGP</Text>
+              <Text style={theme.styles.originalPrice}>{formatPrice(basePrice)} EGP</Text>
               <View style={theme.styles.discountTag}>
                 <Text style={theme.styles.discountValue}>-{item.discount}%</Text>
               </View>
@@ -92,7 +107,7 @@ const Wishlist = () => {
             <Text style={theme.styles.discountedPrice}>{formatPrice(discountedPrice)} EGP</Text>
           </>
         ) : (
-          <Text style={theme.styles.regularPrice}>{formatPrice(item.price)} EGP</Text>
+          <Text style={theme.styles.regularPrice}>{formatPrice(basePrice)} EGP</Text>
         )}
       </View>
     );
@@ -102,7 +117,7 @@ const Wishlist = () => {
     <TouchableOpacity
       style={theme.styles.productCard}
       activeOpacity={0.8}
-      onPress={() => router.push({ pathname: './Pages/singlepage', params: { id: item.id } })}
+      onPress={() => router.push({ pathname: '../Pages/singlepage', params: { id: item.id } })}
     >
       <View style={theme.styles.productContent}>
         <View style={theme.styles.imageContainer}>
@@ -120,7 +135,7 @@ const Wishlist = () => {
         </View>
 
         <View style={theme.styles.productDetails}>
-          <Text style={theme.styles.productName} numberOfLines={2}>{item.name}</Text>
+          <Text style={theme.styles.productName} numberOfLines={2}>{item.name || 'Product'}</Text>
           <View style={theme.styles.infoRow}>
             <View style={theme.styles.infoChip}>
               <FontAwesome name="dollar" size={14} color={theme.colors.icon.priceIcon} />
@@ -213,39 +228,56 @@ const Wishlist = () => {
     loadTheme();
   }, []);
 
-  useEffect(() => {
-    if (!userId) {
-      setFavorites([]);
-      setLoading(false);
-      return;
-    }
+  // userId derived directly from global state; no AsyncStorage fallback needed
 
-    setLoading(true);
-    const unsubscribe = listenToUserFavorites(userId, async (favoriteIds: string | any[]) => {
-      try {
-        setError('');
-        if (!favoriteIds || favoriteIds.length === 0) {
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchFavoriteProducts = async () => {
+      const ids: string[] = favoriteIdsKey ? JSON.parse(favoriteIdsKey) : [];
+
+      if (!ids.length) {
+        if (isMounted) {
           setFavorites([]);
           setLoading(false);
-          return;
+          setError('');
         }
-
-        const productPromises = [...favoriteIds].reverse().map(async (productId: string) => {
-          const productResult = await getDocument("products", productId);
-          return productResult.success ? ({ id: productId, ...productResult.data } as Product) : null;
-        });
-
-        const productsData = await Promise.all(productPromises);
-        setFavorites(productsData.filter(Boolean) as Product[]);
-      } catch (err) {
-        setError('Failed to load favorites');
-      } finally {
-        setLoading(false);
+        return;
       }
-    });
 
-    return () => unsubscribe();
-  }, [userId]);
+      if (isMounted) {
+        setLoading(true);
+      }
+
+      try {
+        const productsData = await Promise.all(
+          [...ids].reverse().map(async (productId: string) => {
+            const productResult = await getProductById(productId);
+            return productResult ? ({ id: productId, ...productResult } as Product) : null;
+          })
+        );
+
+        if (isMounted) {
+          setFavorites(productsData.filter(Boolean) as Product[]);
+          setError('');
+        }
+      } catch (err) {
+        if (isMounted) {
+          setError('Failed to load favorites');
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchFavoriteProducts();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [favoriteIdsKey]);
 
   useFocusEffect(
     useCallback(() => {
@@ -272,7 +304,7 @@ const Wishlist = () => {
           isLoading={deleteLoading}
           title="Remove from Favorites"
           message={selectedProduct ?
-            `Are you sure you want to remove ${selectedProduct.name} from your favorites?` :
+            `Are you sure you want to remove ${selectedProduct.name || 'this item'} from your favorites?` :
             "Are you sure you want to remove this item from your favorites?"}
           confirmButtonText="Remove"
         />

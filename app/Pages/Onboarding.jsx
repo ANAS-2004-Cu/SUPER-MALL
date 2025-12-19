@@ -1,7 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, FlatList, Image, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { darkTheme, lightTheme } from '../../Theme/Pages/OnboardingTheme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -42,13 +44,27 @@ const Slide = ({ item }) => {
       duration: 500,
       useNativeDriver: true,
     }).start();
-  }, [item.id]);
+  }, [item.id, fadeAnim]);
+
+  const [theme, setTheme] = useState(lightTheme);
+
+  useEffect(() => {
+    const loadTheme = async () => {
+      try {
+        const themeMode = await AsyncStorage.getItem('ThemeMode');
+        setTheme(themeMode === '2' ? darkTheme : lightTheme);
+      } catch (error) {
+        console.error('Error loading theme:', error);
+      }
+    };
+    loadTheme();
+  }, []);
 
   return (
     <Animated.View style={[styles.slide, { opacity: fadeAnim }]}>
       <Image source={item.image} style={styles.image} resizeMode="contain" />
-      <Text style={styles.title}>{item.title}</Text>
-      <Text style={styles.subtitle}>{item.subtitle}</Text>
+      <Text style={[styles.title, theme.title]}>{item.title}</Text>
+      <Text style={[styles.subtitle, theme.subtitle]}>{item.subtitle}</Text>
     </Animated.View>
   );
 };
@@ -57,9 +73,21 @@ const Onboarding = () => {
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const flatListRef = useRef(null);
   const router = useRouter();
-  const params = useLocalSearchParams();
-  const fromRegister = params.fromRegister === 'true';
-  const userId = params.userId;
+  const [theme, setTheme] = useState(lightTheme);
+
+  useEffect(() => {
+    const loadTheme = async () => {
+      try {
+        const themeMode = await AsyncStorage.getItem('ThemeMode');
+        setTheme(themeMode === '2' ? darkTheme : lightTheme);
+      } catch (error) {
+        console.error('Error loading theme:', error);
+      }
+    };
+    loadTheme();
+    const intervalId = setInterval(loadTheme, 1000);
+    return () => clearInterval(intervalId);
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -99,14 +127,7 @@ const Onboarding = () => {
   };
 
   const handleDone = async () => {
-    if (fromRegister && userId) {
-      router.push({
-        pathname: '/CategorySelection',
-        params: { userId },
-      });
-    } else {
-      router.replace('/Login');
-    }
+    router.replace('./CategorySelection');
   };
 
   const Footer = () => {
@@ -118,7 +139,8 @@ const Onboarding = () => {
               key={index}
               style={[
                 styles.indicator,
-                currentSlideIndex === index && styles.activeIndicator,
+                theme.indicator,
+                currentSlideIndex === index && { ...styles.activeIndicator, ...theme.activeIndicator },
               ]}
             />
           ))}
@@ -128,16 +150,16 @@ const Onboarding = () => {
           {currentSlideIndex !== slides.length - 1 ? (
             <View style={{ flexDirection: 'row' }}>
               <TouchableOpacity
-                style={[styles.button, styles.skipButton]}
+                style={[styles.button, styles.skipButton, theme.skipButton]}
                 onPress={skipSlides}
               >
-                <Text style={[styles.buttonText, styles.skipText]}>Skip</Text>
+                <Text style={[styles.buttonText, styles.skipText, theme.skipText]}>Skip</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.button, styles.nextButton]}
+                style={[styles.button, styles.nextButton, theme.nextButton]}
                 onPress={goNextSlide}
               >
-                <Text style={styles.buttonText}>Next</Text>
+                <Text style={[styles.buttonText, theme.buttonText]}>Next</Text>
                 <Ionicons
                   name="arrow-forward"
                   size={20}
@@ -148,10 +170,10 @@ const Onboarding = () => {
             </View>
           ) : (
             <TouchableOpacity
-              style={[styles.button, styles.getStartedButton]}
+              style={[styles.button, styles.getStartedButton, theme.getStartedButton]}
               onPress={handleDone}
             >
-              <Text style={styles.buttonText}>Get Started</Text>
+              <Text style={[styles.buttonText, theme.buttonText]}>Get Started</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -160,7 +182,7 @@ const Onboarding = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, theme.container]}>
       <FlatList
         ref={flatListRef}
         data={slides}

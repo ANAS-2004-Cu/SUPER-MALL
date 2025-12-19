@@ -1,10 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
-import { getAuth } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
 import React, { useCallback, useEffect, useState } from "react";
 import { FlatList, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { auth, db, getCollection, isProductInCart, listenToUserFavorites, toggleFavorite, updateCartItemQuantity } from "../../Firebase/Firebase";
+import {
+    getCart,
+    getCurrentUser,
+    getFavorites,
+    getProductById,
+    getProducts,
+    queueCartOperation,
+    toggleFavorite as toggleFavoriteBackend,
+} from '../services/backend.ts';
 import Review from '../../components/Component/Review';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -64,7 +70,8 @@ const ProductDetails = () => {
         setAlertVisible(true);
     };
 
-    const currentUser = auth.currentUser;
+    // TODO replaced firebase call: "const currentUser = auth.currentUser;"
+    const currentUser = getCurrentUser();
     const userId = currentUser ? currentUser.uid : null;
 
     const [favoritesList, setFavoritesList] = useState([]);
@@ -97,16 +104,16 @@ const ProductDetails = () => {
     useEffect(() => {
         const getProduct = async () => {
             try {
-                const docRef = doc(db, "products", id);
-                const docSnap = await getDoc(docRef);
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    setProduct(data);
+                // TODO replaced firebase call: "const docRef = doc(db, \"products\", id);"
+                const fetchedProduct = await getProductById(String(id));
+                if (fetchedProduct) {
+                    setProduct(fetchedProduct);
                     try {
-                        const res = await getCollection("products");
-                        if (res?.success && Array.isArray(res.data)) {
-                            const related = res.data
-                                .filter(p => p?.category === data?.category && p?.id !== id)
+                        // TODO replaced firebase call: "const res = await getCollection(\"products\");"
+                        const allProducts = await getProducts();
+                        if (Array.isArray(allProducts)) {
+                            const related = allProducts
+                                .filter(p => p?.category === fetchedProduct?.category && p?.id !== id)
                                 .slice(0, 15);
                             setRelatedProducts(related);
                         }
@@ -125,8 +132,9 @@ const ProductDetails = () => {
                 return;
             }
             try {
-                const inCart = await isProductInCart(userId, id); 
-                setIsInCart(inCart);
+                // TODO replaced firebase call: "const inCart = await isProductInCart(userId, id);"
+                const cartSnapshot = await getCart(userId, { productId: id });
+                setIsInCart(Boolean(cartSnapshot?.hasProduct));
             } catch (error) {
                 console.error("Error checking cart status:", error);
                 setIsInCart(false);
@@ -136,16 +144,24 @@ const ProductDetails = () => {
         getProduct();
         checkInCart();
 
-        const currentUserId = auth.currentUser?.uid;
+        // TODO replaced firebase call: "const currentUserId = auth.currentUser?.uid;"
+        const currentUserId = getCurrentUser()?.uid;
         let unsubscribe = () => {};
 
         if (currentUserId) {
-            unsubscribe = listenToUserFavorites(currentUserId, (favoritesArray) => {
-                setFavoritesList(favoritesArray);
-                if (id) {
-                    setIsFavorite(favoritesArray.includes(id));
-                }
+            // TODO replaced firebase call: "unsubscribe = listenToUserFavorites(currentUserId, (favoritesArray) => {"
+            const maybeUnsubscribe = getFavorites(currentUserId, {
+                subscribe: true,
+                onUpdate: (favoritesArray) => {
+                    setFavoritesList(favoritesArray);
+                    if (id) {
+                        setIsFavorite(favoritesArray.includes(id));
+                    }
+                },
             });
+            if (typeof maybeUnsubscribe === 'function') {
+                unsubscribe = maybeUnsubscribe;
+            }
         } else {
             setFavoritesList([]);
             setIsFavorite(false);
@@ -153,7 +169,7 @@ const ProductDetails = () => {
         
         return () => unsubscribe();
 
-    }, [id, auth.currentUser]);
+    }, [id, currentUser?.uid]);
 
     const handleFavorite = async () => {
         if (!userId) {
@@ -161,7 +177,8 @@ const ProductDetails = () => {
             return;
         }
         try {
-            const res = await toggleFavorite(userId, id);
+            // TODO replaced firebase call: "const res = await toggleFavorite(userId, id);"
+            const res = await toggleFavoriteBackend(userId, id);
             if (!res.success) throw new Error(res.error || 'Failed');
             showAlert1(
                 `${String(product?.name).split(' ').slice(0, 2).join(' ')} ${res.newStatus ? 'Added to favorites!' : 'Removed from favorites!'}`,
@@ -178,7 +195,8 @@ const ProductDetails = () => {
             return;
         }
         try {
-            const res = await toggleFavorite(userId, productId);
+            // TODO replaced firebase call: "const res = await toggleFavorite(userId, productId);"
+            const res = await toggleFavoriteBackend(userId, productId);
             if (!res.success) return;
 
             const target = relatedProducts.find(p => String(p.id) === String(productId)) || product;
@@ -191,7 +209,8 @@ const ProductDetails = () => {
     };
 
     const handleAddToCart = async () => {
-        const cu = getAuth().currentUser;
+        // TODO replaced firebase call: "const cu = getAuth().currentUser;"
+        const cu = getCurrentUser();
         if (!cu) {
             showAlert1('Please login to add products to your shopping cart', 'error');
             return;
@@ -215,24 +234,28 @@ const ProductDetails = () => {
         }
 
         try {
-            const cartDocRef = doc(db, 'Users', cu.uid, 'cart', id);
-            const cartDocSnap = await getDoc(cartDocRef);
-            const currentQty = cartDocSnap.exists() ? Number(cartDocSnap.data()?.quantity || 0) : 0;
-            const newQty = currentQty + 1;
-
             const maxAllowed = getMaxAllowedForProduct(product);
-            if (newQty > maxAllowed) {
-                if (!isNaN(Number(product?.AvilableQuantityBerOeder)) && maxAllowed === Number(product?.AvilableQuantityBerOeder)) {
-                    showAlert1(`Max per order is ${product?.AvilableQuantityBerOeder}`, 'error');
-                } else if (!isNaN(Number(product?.stockQuantity))) {
-                    showAlert1(`Only ${product?.stockQuantity} in stock`, 'error');
-                } else {
-                    showAlert1('Cannot increase quantity', 'error');
-                }
-                return;
-            }
+            // TODO replaced firebase call: "const cartDocRef = doc(db, 'Users', cu.uid, 'cart', id);"
+            const operationResult = await queueCartOperation(cu.uid, {
+                productId: String(id),
+                type: 'increment',
+                quantity: 1,
+                maxQuantity: maxAllowed,
+            });
 
-            await updateCartItemQuantity(cu.uid, id, newQty);
+            if (!operationResult.success) {
+                if (operationResult.error === 'MAX_QUANTITY_EXCEEDED') {
+                    if (!isNaN(Number(product?.AvilableQuantityBerOeder)) && maxAllowed === Number(product?.AvilableQuantityBerOeder)) {
+                        showAlert1(`Max per order is ${product?.AvilableQuantityBerOeder}`, 'error');
+                    } else if (!isNaN(Number(product?.stockQuantity))) {
+                        showAlert1(`Only ${product?.stockQuantity} in stock`, 'error');
+                    } else {
+                        showAlert1('Cannot increase quantity', 'error');
+                    }
+                    return;
+                }
+                throw new Error(operationResult.error || 'Failed to update cart');
+            }
 
             setIsInCart(true);
             showAlert({

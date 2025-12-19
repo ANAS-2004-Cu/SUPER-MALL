@@ -1,10 +1,10 @@
-import React, { useEffect } from 'react';
-import { Animated, Text, View, StyleSheet } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
+import React, { useEffect } from 'react';
+import { Animated, StyleSheet, Text } from 'react-native';
 
 interface MiniAlertProps {
     message: string;
-    type: 'success' | 'error';
+    type: 'success' | 'error' | 'warning';
     onHide: () => void;
 }
 
@@ -28,21 +28,26 @@ const MiniAlert: React.FC<MiniAlertProps> = ({ message, type, onHide }) => {
         return () => clearTimeout(timer);
     }, []);
 
+    const backgroundColor =
+        type === 'success' ? '#4CAF50' : type === 'warning' ? '#FFC107' : '#F44336';
+
+    const iconName = type === 'success' ? 'check-circle' : type === 'warning' ? 'exclamation-triangle' : 'exclamation-circle';
+
     return (
         <Animated.View
             style={[
                 styles.alertContainer,
                 {
-                    backgroundColor: type === 'success' ? '#4CAF50' : '#F44336',
+                    backgroundColor,
                     transform: [{ translateY }],
                 },
             ]}
         >
             <FontAwesome
-                name={type === 'success' ? 'check-circle' : 'exclamation-circle'}
+                name={iconName}
                 size={20}
                 color="#fff"
-                style={{ position: 'absolute', left: 10, top: "50%" }}
+                style={{ position: 'absolute', left: 10, top: '50%' }}
             />
             <Text style={styles.alertText}>{message}</Text>
         </Animated.View>

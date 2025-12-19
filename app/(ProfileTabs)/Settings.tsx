@@ -11,8 +11,9 @@ import {
     View,
 } from "react-native";
 import MiniAlert from "../../components/Component/MiniAlert";
-import { auth, loadCachedPreferredCategories, syncAvailableCategories, updateUserPreferredCategories } from "../../Firebase/Firebase";
+import { useUserStore } from "../../store/userStore";
 import { darkTheme, lightTheme } from "../../Theme/ProfileTabs/SettingsTheme";
+import { updateUserData } from "../services/DBAPI";
 
 interface SettingItemProps {
     icon: React.ComponentProps<typeof Ionicons>["name"];
@@ -57,13 +58,16 @@ const SettingItem: React.FC<SettingItemProps> = ({
     );
 };
 
-// تعريف نوع بيانات الفئة
+// تعريف نوع بيانات الفئة (names only for this screen)
 type Category = {
     id: string;
     name: string;
 };
 
 const Settings = () => {
+    const user = useUserStore((state) => state.user);
+    const isLoggedIn = useUserStore((state) => state.isLoggedIn);
+    const setUser = useUserStore((state) => state.setUser);
     const [notifications, setNotifications] = useState(true);
     const [darkMode, setDarkMode] = useState(false);
     const [theme, setTheme] = useState(lightTheme);
@@ -76,6 +80,14 @@ const Settings = () => {
     const showAlert = (message: string, type: 'success' | 'error' = 'error') => {
         setAlertMsg(message);
         setAlertType(type);
+    };
+
+    const requireAuthenticatedUser = () => {
+        if (!isLoggedIn || !user?.uid) {
+            showAlert("Please login to choose preferred categories.", 'error');
+            return null;
+        }
+        return user;
     };
 
     const loadThemeMode = async () => {
@@ -100,51 +112,88 @@ const Settings = () => {
         }
     };
 
-    const loadAvailableCategories = async () => {
-        const { success, data: cats } = await syncAvailableCategories();
-        if (success && cats.length > 0) {
-            setAvailableCategories(cats as Category[]);
-        }
-    };
-
-    const loadUserPreferredCategories = async () => {
+    const loadAvailableCategories = useCallback(async () => {
         try {
-            const cats = await loadCachedPreferredCategories();
-            setSelectedCategories(cats);
-        } catch {}
-    };
-
-    const openCategoryDropdown = async () => {
-        // Check login state before opening dropdown
-        try {
-            const userJson = await AsyncStorage.getItem('UserObject');
-            const isLoggedIn = !!auth.currentUser || (!!userJson && userJson !== "undefined");
-            if (!isLoggedIn) {
-                showAlert("Please login to choose preferred categories.", 'error');
+            const manageData = await AsyncStorage.getItem("unUpadtingManageDocs");
+            if (!manageData) {
+                setAvailableCategories([]);
                 return;
             }
+
+            const parsedData = JSON.parse(manageData);
+            const categoriesArray = parsedData?.AvilableCategory || [];
+            const formattedCategories: Category[] = categoriesArray.map((item: any, index: number) => {
+                if (typeof item === "string" && item.includes(",")) {
+                    const [name] = item.split(",");
+                    return {
+                        id: index.toString(),
+                        name: name.trim(),
+                    };
+                }
+
+                if (typeof item === "string") {
+                    return {
+                        id: index.toString(),
+                        name: item.trim(),
+                    };
+                }
+
+                const derivedName = (item?.name || item?.CategoryName || item?.title || "").trim();
+                return {
+                    id: item?.id || index.toString(),
+                    name: derivedName || `Category ${index + 1}`,
+                };
+            });
+
+            setAvailableCategories(formattedCategories);
+        } catch (error) {
+            console.error("Error loading categories:", error);
+            setAvailableCategories([]);
+        }
+    }, []);
+
+    const loadUserPreferredCategories = useCallback(() => {
+        try {
+            const preferredSource = user?.preferredCategories;
+            const preferred = Array.isArray(preferredSource) ? [...preferredSource] : [];
+            setSelectedCategories(preferred);
         } catch {
-            showAlert("Please login to choose preferred categories.", 'error');
+            setSelectedCategories([]);
+        }
+    }, [user]);
+
+    const openCategoryDropdown = async () => {
+        const currentUser = requireAuthenticatedUser();
+        if (!currentUser) {
             return;
         }
 
         await loadAvailableCategories();
-        await loadUserPreferredCategories();
+        loadUserPreferredCategories();
         setShowDropdown((prev: boolean) => !prev);
     };
 
     const savePreferredCategories = async () => {
-        if (!auth.currentUser) return;
+        const currentUser = requireAuthenticatedUser();
+        if (!currentUser) {
+            return;
+        }
+
         setSavingCategories(true);
         try {
-            const res = await updateUserPreferredCategories(auth.currentUser.uid, selectedCategories);
-            if (res.success) {
+            const response = await updateUserData(currentUser.uid, { preferredCategories: selectedCategories });
+            if (!response.success) {
+                showAlert(response.error || "Failed to save categories", "error");
+            } else {
+                setUser({
+                    ...currentUser,
+                    preferredCategories: selectedCategories,
+                });
                 setShowDropdown(false);
                 showAlert("Saved successfully", "success");
-            } else {
-                showAlert(res.error || "Failed to save categories", "error");
             }
-        } catch {
+        } catch (error) {
+            console.error("Failed to save categories:", error);
             showAlert("Failed to save categories", "error");
         }
         setSavingCategories(false);
@@ -160,19 +209,16 @@ const Settings = () => {
         {
             icon: "notifications-outline" as const,
             title: "Notifications",
-            subtitle: "Manage notification preferences",
+            subtitle: "Coming soon",
             rightComponent: (
                 <Switch
-                    value={notifications}
-                    onValueChange={setNotifications}
+                    value={false}
+                    disabled={true}
                     trackColor={{ 
                         false: theme.colors.switch.track.inactive, 
                         true: theme.colors.switch.track.active 
                     }}
-                    thumbColor={notifications ? 
-                        theme.colors.switch.thumb.active : 
-                        theme.colors.switch.thumb.inactive
-                    }
+                    thumbColor={theme.colors.switch.thumb.inactive}
                 />
             ),
             showArrow: false,
@@ -209,6 +255,10 @@ const Settings = () => {
     useEffect(() => {
         loadThemeMode();
     }, []);
+
+    useEffect(() => {
+        loadUserPreferredCategories();
+    }, [loadUserPreferredCategories]);
 
     useFocusEffect(
         useCallback(() => {

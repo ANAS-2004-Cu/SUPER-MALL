@@ -65,7 +65,7 @@ import EditProductModal from '../../components/EditProductModal';
       try {
         setLoading(true);
         const querysnapshot = await getDocs(colRef);
-        var productsArr = querysnapshot.docs.map(doc => ({
+        let productsArr = querysnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         })) as Product[];

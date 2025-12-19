@@ -12,6 +12,7 @@ import {
   View
 } from 'react-native';
 import MiniAlert from '../../components/Component/MiniAlert';
+import { useUserStore } from '../../store/userStore';
 import { darkTheme, lightTheme } from '../../Theme/ProfileTabs/HelpTheme';
 
 interface HelpTopicItemProps {
@@ -73,21 +74,25 @@ const Help = () => {
   const helpTopics = [
     { icon: 'person-outline', title: 'Account Information', subtitle: 'Manage your account, Update Data', route: './editprofile' },
     { icon: 'key-outline', title: 'Password & Login Issues', subtitle: 'Reset & Update Password', route: '../Authentication/ForgetPass' },
-    { icon: 'mail-outline', title: 'Change Email Address', subtitle: 'Update your account email', route: '../Authentication/ChangeEmail' },
+    { icon: 'mail-outline', title: 'Change Email Address', subtitle: 'Not working, future update', route: '../Authentication/ChangeEmail' },
     { icon: 'location-outline', title: 'Address', subtitle: 'Manage your saved addresses', route: './address' },
     { icon: 'cube-outline', title: 'Orders & Tracking', subtitle: 'Track your order, shipping updates', route: './orders' }
   ];
 
   const handleHelpTopicPress = async (route: string) => {
     try {
-      const userString = await AsyncStorage.getItem('UserObject');
-      const isLoggedIn = !!userString && userString !== "undefined";
+      const isLoggedIn = useUserStore.getState().isLoggedIn;
       if (!isLoggedIn) {
         showAlert("Please login to access this feature.", 'error');
         return;
       }
     } catch {
       showAlert("Please login to access this feature.", 'error');
+      return;
+    }
+
+    if (route === '../Authentication/ChangeEmail') {
+      showAlert("This feature is not available yet.", 'error');
       return;
     }
 

@@ -3,8 +3,13 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import MiniAlert from '../../../components/Component/MiniAlert';
-import { auth, getShippingFeeByCity, getUserAddresses, placeOrderFromCart } from '../../../Firebase/Firebase';
 import { paymentDarkTheme, paymentLightTheme } from '../../../Theme/Cart/paymentTheme';
+import {
+  getCurrentUser,
+  getShippingFeeByCity,
+  getUserAddresses,
+  placeOrderFromCart,
+} from '../../services/backend';
 
 const computeProductPricing = (product = {}) => {
   const base = Number(product.price) || 0;
@@ -58,7 +63,9 @@ const WalletPayment = () => {
   }, []);
 
   const fetchAddress = useCallback(async () => {
-    const uid = auth.currentUser?.uid;
+    const user = getCurrentUser();
+    // TODO replaced firebase call: "const uid = auth.currentUser?.uid;"
+    const uid = user?.uid;
     if (!uid) return;
     const list = await getUserAddresses(uid);
     const found = list.find(a => a.id === selectedAddressId) || list.find(a => a.isDefault) || list[0] || null;
@@ -67,7 +74,8 @@ const WalletPayment = () => {
 
   useEffect(() => {
     const init = async () => {
-      if (!auth.currentUser) {
+      // TODO replaced firebase call: "if (!auth.currentUser) {"
+      if (!getCurrentUser()) {
         router.replace('/Authentication/Login');
         return;
       }
@@ -83,6 +91,7 @@ const WalletPayment = () => {
       try {
         const city = addressSnapshot?.City|| '';
         if (!city) { setShippingFee(0); return; }
+        // TODO replaced firebase call: "const fee = await getShippingFeeByCity(city);"
         const fee = await getShippingFeeByCity(city);
         setShippingFee(fee);
       } catch { setShippingFee(0); }
@@ -104,6 +113,7 @@ const WalletPayment = () => {
 
   const placeOrder = async () => {
     try {
+      // TODO replaced firebase call: "const res = await placeOrderFromCart({"
       const res = await placeOrderFromCart({
         paymentMethod: 'WALLET',
         addressSnapshot,

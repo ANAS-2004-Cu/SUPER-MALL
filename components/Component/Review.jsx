@@ -1,8 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { addDoc, collection, onSnapshot, orderBy, query, serverTimestamp } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import { Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { auth, db, getUserData } from "../../Firebase/Firebase";
+import { createProductReview, getCurrentUser, getProductReviews, getUserProfile } from '../../app/services/backend.ts';
 import { darkTheme as reviewDarkTheme, lightTheme as reviewLightTheme } from '../../Theme/Component/ReviewTheme';
 
 const Review = ({ productId }) => {
@@ -29,18 +28,17 @@ const Review = ({ productId }) => {
   useEffect(() => {
     if (!productId) return;
 
-    const reviewsRef = collection(db, 'products', productId, 'reviews');
-    const q = query(reviewsRef, orderBy('createdAt', 'desc'));
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const loadedReviews = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setReviews(loadedReviews);
+    // TODO replaced firebase call: "const reviewsRef = collection(db, 'products', productId, 'reviews');"
+    const unsubscribe = getProductReviews(productId, {
+      subscribe: true,
+      onUpdate: (loadedReviews) => setReviews(loadedReviews),
     });
 
-    return () => unsubscribe();
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
   }, [productId]);
 
   const averageRating = reviews.length > 0
@@ -94,14 +92,16 @@ const Review = ({ productId }) => {
     }
 
     try {
-      const currentUser = auth.currentUser;
+      // TODO replaced firebase call: "const currentUser = auth.currentUser;"
+      const currentUser = getCurrentUser();
 
       if (!currentUser) {
         alert('You must be logged in to add a review.');
         return;
       }
 
-      const userData = await getUserData(currentUser.uid);
+      // TODO replaced firebase call: "const userData = await getUserData(currentUser.uid);"
+      const userData = await getUserProfile(currentUser.uid);
 
       const reviewData = {
         comment,
@@ -109,14 +109,13 @@ const Review = ({ productId }) => {
         userId: currentUser.uid,
         username: userData?.username || 'Anonymous',
         userImage: userData?.image || 'https://randomuser.me/api/portraits/men/1.jpg',
-        createdAt: serverTimestamp(),
-        likes: 0,
-        dislikes: 0,
-        userReaction: null
       };
 
-      const reviewsRef = collection(db, 'products', productId, 'reviews');
-      await addDoc(reviewsRef, reviewData);
+      // TODO replaced firebase call: "await addDoc(reviewsRef, reviewData);"
+      const result = await createProductReview(productId, reviewData);
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to add review');
+      }
 
       setComment('');
       setRating(0);

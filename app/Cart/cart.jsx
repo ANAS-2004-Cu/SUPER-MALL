@@ -1,11 +1,20 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Stack, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import MiniAlert from '../../components/Component/MiniAlert';
-import { auth, clearUserCart, getDocument, getUserCart, removeCartItem, updateCartItemQuantity } from '../../Firebase/Firebase';
+import { useUserStore } from '../../store/userStore';
 import { cartDarkTheme, cartLightTheme } from '../../Theme/Cart/cartTheme';
+import {
+    clearCart as clearCartBackend,
+    getCart,
+    getCurrentUser,
+    getProductById,
+    onAuthChange,
+    queueCartOperation,
+    removeCartItem,
+} from '../services/backend';
 
 const computeProductPricing = (product = {}) => {
   const base = Number(product.price) || 0;
@@ -67,22 +76,27 @@ const CartPage = () => {
 
   const checkLogin = useCallback(async () => {
     try {
-      const userJson = await AsyncStorage.getItem('UserObject');
-      setIsLoggedIn(!!auth.currentUser || (userJson && userJson !== 'undefined'));
+      const user = useUserStore.getState().user;
+      // TODO replaced firebase call: "setIsLoggedIn(!!auth.currentUser || (userJson && userJson !== 'undefined'));"
+      setIsLoggedIn(!!getCurrentUser() || !!user);
     } catch {
       setIsLoggedIn(false);
     }
   }, []);
 
   const loadCartFromFirestore = useCallback(async () => {
-    if (!auth.currentUser) {
+    // TODO replaced firebase call: "if (!auth.currentUser) {"
+    const user = getCurrentUser();
+    if (!user) {
       setCartItems([]);
       setLoading(false);
       return;
     }
     setLoading(true);
     try {
-      const rawCart = await getUserCart(auth.currentUser.uid);
+      // TODO replaced firebase call: "const rawCart = await getUserCart(auth.currentUser.uid);"
+      const cartSnapshot = await getCart(user.uid);
+      const rawCart = cartSnapshot.items || [];
       if (!rawCart.length) {
         setCartItems([]);
         return;
@@ -91,12 +105,13 @@ const CartPage = () => {
       const enriched = [];
       for (const entry of rawCart) {
         try {
-          const prodRes = await getDocument('products', entry.productId);
-          if (prodRes.success) {
+          // TODO replaced firebase call: "const prodRes = await getDocument('products', entry.productId);"
+          const productData = await getProductById(entry.productId);
+          if (productData) {
             enriched.push({
               productId: entry.productId,
               quantity: entry.quantity || 1,
-              product: prodRes.data
+              product: productData
             });
           }
         } catch {}
@@ -109,7 +124,8 @@ const CartPage = () => {
         if (q > maxAllowed) {
           q = maxAllowed < 1 ? 1 : maxAllowed;
           // persist correction
-          await updateCartItemQuantity(auth.currentUser?.uid, ci.productId, q);
+          // TODO replaced firebase call: "await updateCartItemQuantity(auth.currentUser?.uid, ci.productId, q);"
+          await queueCartOperation(user.uid, { productId: ci.productId, type: 'set', quantity: q });
         }
         adjusted.push({ ...ci, quantity: q });
       }
@@ -138,11 +154,19 @@ const CartPage = () => {
 
   useEffect(() => {
     checkLogin();
-  }, [checkLogin, auth.currentUser]);
+  }, [checkLogin]);
 
   useEffect(() => {
     loadCartFromFirestore();
-  }, [loadCartFromFirestore, auth.currentUser]);
+  }, [loadCartFromFirestore]);
+
+  useEffect(() => {
+    const unsubscribe = onAuthChange(() => {
+      checkLogin();
+      loadCartFromFirestore();
+    });
+    return unsubscribe;
+  }, [checkLogin, loadCartFromFirestore]);
 
   const updateQuantity = async (productId, delta) => {
     const target = cartItems.find(c => c.productId === productId);
@@ -175,12 +199,23 @@ const CartPage = () => {
         ci.productId === productId ? { ...ci, quantity: desired } : ci
       )
     );
-    await updateCartItemQuantity(auth.currentUser?.uid, productId, desired);
+    const user = getCurrentUser();
+    if (!user) return;
+    // TODO replaced firebase call: "await updateCartItemQuantity(auth.currentUser?.uid, productId, desired);"
+    await queueCartOperation(user.uid, {
+      productId,
+      type: 'set',
+      quantity: desired,
+      maxQuantity: maxAllowed,
+    });
   };
 
   const removeItem = async (productId) => {
     setCartItems(prev => prev.filter(ci => ci.productId !== productId));
-    await removeCartItem(auth.currentUser?.uid, productId);
+    const user = getCurrentUser();
+    if (!user) return;
+    // TODO replaced firebase call: "await removeCartItem(auth.currentUser?.uid, productId);"
+    await removeCartItem(user.uid, productId);
     showAlert('Item removed', 'success');
   };
 
@@ -192,7 +227,10 @@ const CartPage = () => {
         style: 'destructive',
         onPress: async () => {
           setCartItems([]);
-          await clearUserCart(auth.currentUser?.uid);
+          const user = getCurrentUser();
+          if (!user) return;
+          // TODO replaced firebase call: "await clearUserCart(auth.currentUser?.uid);"
+          await clearCartBackend(user.uid);
           // AsyncStorage will be updated by the cartItems effect
           showAlert('Cart cleared', 'success');
         }

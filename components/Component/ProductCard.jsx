@@ -4,8 +4,8 @@ import React, { useEffect, useState } from "react";
 import { AppState, Dimensions, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Icon from "react-native-vector-icons/Feather";
 import FAIcon from 'react-native-vector-icons/FontAwesome'; // added
-import { getUserCart, removeCartItem, updateCartItemQuantity } from '../../Firebase/Firebase'; // removed getDocument, updateDocument
 import { darkTheme, lightTheme } from '../../Theme/Component/ProductCardTheme';
+import { getCart, queueCartOperation, removeCartItem } from '../../app/services/backend';
 
 const { width } = Dimensions.get('window');
 const cardWidth = (width / 2) - 24;
@@ -108,8 +108,9 @@ const ProductCard = ({
   const fetchUserCart = async () => {
     if (!currentUser) return;
     try {
-      const arr = await getUserCart(currentUser.uid);
-      setCartItems(arr);
+      // TODO replaced firebase call: "const arr = await getUserCart(currentUser.uid);"
+      const snapshot = await getCart(currentUser.uid);
+      setCartItems(snapshot.items || []);
     } catch {
       setCartItems([]);
     }
@@ -148,7 +149,8 @@ const ProductCard = ({
         }
         return;
       }
-      await updateCartItemQuantity(currentUser.uid, item.id, newQty);
+      // TODO replaced firebase call: "await updateCartItemQuantity(currentUser.uid, item.id, newQty);"
+      await queueCartOperation(currentUser.uid, { productId: item.id, type: 'set', quantity: newQty });
       await fetchUserCart();
       onShowAlert(`${item.name.split(' ').slice(0, 2).join(' ')} Added to cart`);
     } catch {
@@ -163,6 +165,7 @@ const ProductCard = ({
     // If user decremented from 1 to 0 => remove item
     if (newQuantity < 1) {
       try {
+        // TODO replaced firebase call: "await removeCartItem(currentUser.uid, item.id);"
         await removeCartItem(currentUser.uid, item.id);
         await fetchUserCart();
         onShowAlert('Removed from cart');
@@ -185,7 +188,8 @@ const ProductCard = ({
     }
 
     try {
-      await updateCartItemQuantity(currentUser.uid, item.id, newQuantity);
+      // TODO replaced firebase call: "await updateCartItemQuantity(currentUser.uid, item.id, newQuantity);"
+      await queueCartOperation(currentUser.uid, { productId: item.id, type: 'set', quantity: newQuantity });
       await fetchUserCart();
     } catch {
       onShowAlert('Failed to update cart', 'error');

@@ -3,12 +3,12 @@ import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { AppState, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import MiniAlert from "../../components/Component/MiniAlert";
-import { signOut } from "../../Firebase/Firebase";
+import { useUserStore } from "../../store/userStore";
 import { darkTheme, lightTheme } from "../../Theme/Tabs/ProfileTheme";
+import { signOutUser } from "../services/DBAPI";
 
 const Profile = () => {
-  const [userData, setUserData] = useState<any>(null);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const { user: userData, isLoggedIn } = useUserStore();
   const [alertMsg, setAlertMsg] = useState<string | null>(null);
   const [alertType, setAlertType] = useState<'success' | 'error'>('error');
   const [theme, setTheme] = useState(lightTheme);
@@ -20,17 +20,7 @@ const Profile = () => {
   };
 
   useEffect(() => {
-    const fetchUserData = async () => {
-      const userDataString = await AsyncStorage.getItem("UserObject");
-      if (userDataString) {
-        const data = JSON.parse(userDataString);
-        setUserData(data);
-        setIsLoggedIn(data !== "undefined");
-      }
-    };
-
     updateTheme();
-    fetchUserData();
 
     const subscription = AppState.addEventListener("change", nextAppState => {
       if (appState.match(/inactive|background/) && nextAppState === "active") {
@@ -62,13 +52,12 @@ const Profile = () => {
 
   const handleSignOut = async () => {
     try {
-      const result = await signOut();
+      const result = await signOutUser();
       if (result.success) {
-        await AsyncStorage.removeItem("UserObject");
-        setUserData(null);
-        setIsLoggedIn(false);
+        useUserStore.getState().logout();
+        await AsyncStorage.removeItem("LoginID");
         showAlert("Successfully signed out", 'success');
-        router.replace("/Authentication/Login");
+        router.replace("/home");
       } else {
         showAlert(result.error || "Failed to sign out", 'error');
       }
@@ -166,15 +155,6 @@ const Profile = () => {
         activeOpacity={0.6}
       >
         <Text style={[styles.textb, theme.name]}>Help & Support</Text>
-        <View style={[styles.arrow, theme.arrow]} />
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={[styles.profiletabs, theme.profiletabs]}
-        onPress={() => router.push("/About")}
-        activeOpacity={0.6}
-      >
-        <Text style={[styles.textb, theme.name]}>About</Text>
         <View style={[styles.arrow, theme.arrow]} />
       </TouchableOpacity>
 

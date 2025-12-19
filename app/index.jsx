@@ -1,8 +1,10 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import { Stack, useRouter } from 'expo-router';
-import React, { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, View } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { Animated, StyleSheet, View, Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useUserStore } from '../store/userStore';
+import { getUserData,fetchManageDocs } from './services/DBAPI';
 
 const WelcomeScreen = () => {
   const router = useRouter();
@@ -20,33 +22,38 @@ const WelcomeScreen = () => {
     const handleNavigation = async () => {
       setTimeout(async () => {
         try {
-          const userDataObject = await AsyncStorage.getItem('UserObjects');
-          const isAdminString = false;
-          
-          if (userDataObject) {
-            const isAdmin = isAdminString === 'true';
-            
-            if (isAdmin) {
-              console.log("Admin user found, redirecting to admin panel");
-              router.replace('./Admintabs');
-            } else {
-              console.log("Regular user found, redirecting to user home");
-              router.replace('/(tabs)');
-              router.push('/home');
+          const loginId = await AsyncStorage.getItem('LoginID');
+          if (loginId) {
+            try {
+              const userData = await getUserData(loginId);
+              const manageResponse = await fetchManageDocs();
+              await AsyncStorage.setItem('unUpadtingManageDocs', JSON.stringify(manageResponse.unUpadtingManageDocs));
+              await AsyncStorage.setItem('UpadtingManageDocs', JSON.stringify(manageResponse.UpadtingManageDocs));
+              if (userData) {
+                useUserStore.getState().login(userData);
+                
+                if (userData.isAdmin === true) {
+                  router.replace('./Admintabs');
+                } else {
+                  router.replace('/(tabs)/home');
+                }
+              } else {
+                router.replace('/(tabs)/home');
+              }
+            } catch (_error) {
+                Alert.alert('Error', 'A connection error occurred. Please try again later.');
             }
           } else {
-            console.log("No user data found, redirecting to login");
-            router.replace('/Authentication/Login');
+            router.replace('/(tabs)/home');
           }
-        } catch (error) {
-          console.error('Error reading AsyncStorage:', error);
-          router.replace('/Authentication/Login');
+        } catch (_error) {
+            Alert.alert('Error', 'A connection error occurred. Please try again later.');
         }
       }, 5000);
     };
 
     handleNavigation();
-  }, []);
+  }, [router, titleAnimation]);
 
   return (
     <>

@@ -8,7 +8,7 @@
   "folder-color.pathColors": [
     {
       "folderPath": "SUPER-MALL\\app\\(ProfileTabs)\\",
-      "color": "foldercolorizer.color_00ccff"
+      "color": "foldercolorizer.color_00cc33"
     },
     {
       "folderPath": "SUPER-MALL\\app\\(tabs)\\",
@@ -16,7 +16,7 @@
     },
     {
       "folderPath": "SUPER-MALL\\app\\Authentication\\",
-      "color": "foldercolorizer.color_00ccff"
+      "color": "foldercolorizer.color_00cc33"
     },
     {
       "folderPath": "SUPER-MALL\\app\\Cart\\",
@@ -36,7 +36,7 @@
     },
     {
       "folderPath": "SUPER-MALL\\Theme\\",
-      "color": "foldercolorizer.color_00ccff"
+      "color": "foldercolorizer.color_00cc33"
     },
     {
       "folderPath": "SUPER-MALL\\components\\Component\\",
@@ -44,11 +44,95 @@
     },
     {
       "folderPath": "SUPER-MALL\\app\\ChatBot\\",
-      "color": "foldercolorizer.color_00ccff"
+      "color": "foldercolorizer.color_00cc33"
     },
     {
       "folderPath": "SUPER-MALL\\app\\index.jsx\\",
-      "color": "foldercolorizer.color_00ccff"
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\_layout.tsx\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\Authentication\\Login.jsx\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\Authentication\\ForgetPass.tsx\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\Authentication\\Register.jsx\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\Pages\\Onboarding.jsx\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\Pages\\CategorySelection.jsx\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\Pages\\ad-detail.jsx\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\(tabs)\\ChatBot.jsx\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\(tabs)\\_layout.tsx\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\(tabs)\\profile.tsx\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\(ProfileTabs)\\About.tsx\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\components\\Component\\MiniAlert.tsx\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\Pages\\OrderSummary.jsx\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\(ProfileTabs)\\orders.tsx\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\Modal\\DeleteModal.tsx\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\Modal\\AddressModal.tsx\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\(ProfileTabs)\\address.tsx\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\(ProfileTabs)\\help.tsx\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\(ProfileTabs)\\Settings.tsx\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\(ProfileTabs)\\Wishlist.tsx\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\(ProfileTabs)\\editprofile.tsx\\",
+      "color": "foldercolorizer.color_00cc33"
     }
   ]
 }
