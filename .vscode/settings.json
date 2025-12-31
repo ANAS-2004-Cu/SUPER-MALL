@@ -32,7 +32,7 @@
     },
     {
       "folderPath": "SUPER-MALL\\Modal\\",
-      "color": "foldercolorizer.color_00ccff"
+      "color": "foldercolorizer.color_00cc33"
     },
     {
       "folderPath": "SUPER-MALL\\Theme\\",
@@ -132,6 +132,18 @@
     },
     {
       "folderPath": "SUPER-MALL\\app\\(ProfileTabs)\\editprofile.tsx\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\Modal\\FilterModal.jsx\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\(tabs)\\products.jsx\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\components\\Component\\ProductCard.jsx\\",
       "color": "foldercolorizer.color_00cc33"
     }
   ]

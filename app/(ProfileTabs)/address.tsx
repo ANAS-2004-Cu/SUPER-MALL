@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Stack, router } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Stack, router, useFocusEffect } from 'expo-router';
+import React, { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import AddressModal from '../../Modal/AddressModal';
 import DeleteModal from '../../Modal/DeleteModal';
@@ -130,6 +130,8 @@ const Address = () => {
   const [alertMsg, setAlertMsg] = useState<string | null>(null);
   const [alertType, setAlertType] = useState<'success' | 'error'>('success');
   const [theme, setTheme] = useState(lightTheme);
+  const [themeVersion, setThemeVersion] = useState(0);
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const isLoadingAddresses = loading && !refreshing;
 
   const updateStoreAddresses = useCallback((next: Address[]) => {
@@ -152,7 +154,10 @@ const Address = () => {
   const loadTheme = useCallback(async () => {
     try {
       const themeMode = await AsyncStorage.getItem('ThemeMode');
-      setTheme(themeMode === '2' ? darkTheme : lightTheme);
+      const isDark = themeMode === '2';
+      setIsDarkMode(isDark);
+      setTheme(isDark ? { ...darkTheme } : { ...lightTheme });
+      setThemeVersion((version) => version + 1);
     } catch (error) {
       console.error('Error loading theme:', error);
     }
@@ -197,9 +202,11 @@ const Address = () => {
     [showAlert, updateStoreAddresses, userId]
   );
 
-  useEffect(() => {
-    loadTheme();
-  }, [loadTheme]);
+  useFocusEffect(
+    useCallback(() => {
+      loadTheme();
+    }, [loadTheme])
+  );
 
   const confirmDeleteAddress = async () => {
     if (!selectedAddressId) return;
@@ -285,7 +292,11 @@ const Address = () => {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <LinearGradient colors={theme.gradientColors as [string, string, ...string[]]} style={styles.container}>
+      <LinearGradient
+        key={`address-theme-${themeVersion}`}
+        colors={theme.gradientColors as [string, string, ...string[]]}
+        style={styles.container}
+      >
         {alertMsg && (
           <MiniAlert
             message={alertMsg}
@@ -302,6 +313,8 @@ const Address = () => {
           title="Delete Address"
           message="Are you sure you want to delete this address?"
           warningMessage={getDeleteWarningMessage()}
+          theme={theme}
+          isDarkMode={isDarkMode}
         />
 
         <View style={[styles.header, { borderBottomColor: theme.borderBottomColor }]}>

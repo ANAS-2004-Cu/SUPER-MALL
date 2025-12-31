@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
-import { AppState, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useMemo, useState } from "react";
+import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import MiniAlert from "../../components/Component/MiniAlert";
 import { useUserStore } from "../../store/userStore";
 import { darkTheme, lightTheme } from "../../Theme/Tabs/ProfileTheme";
@@ -12,30 +12,32 @@ const Profile = () => {
   const [alertMsg, setAlertMsg] = useState<string | null>(null);
   const [alertType, setAlertType] = useState<'success' | 'error'>('error');
   const [theme, setTheme] = useState(lightTheme);
-  const [appState, setAppState] = useState(AppState.currentState);
+  const [themeVersion, setThemeVersion] = useState(0);
 
-  const updateTheme = async () => {
-    const themeMode = await AsyncStorage.getItem("ThemeMode");
-    setTheme(themeMode === "2" ? darkTheme : lightTheme);
-  };
+  const updateTheme = useCallback(() => {
+    let isActive = true;
 
-  useEffect(() => {
-    updateTheme();
+    (async () => {
+      try {
+        const themeMode = await AsyncStorage.getItem("ThemeMode");
+        const isDarkMode = themeMode === "2";
+        const nextTheme = isDarkMode ? { ...darkTheme } : { ...lightTheme };
 
-    const subscription = AppState.addEventListener("change", nextAppState => {
-      if (appState.match(/inactive|background/) && nextAppState === "active") {
-        updateTheme();
+        if (isActive) {
+          setTheme(() => nextTheme);
+          setThemeVersion((value) => value + 1);
+        }
+      } catch (error) {
+        console.error("Failed to load theme:", error);
       }
-      setAppState(nextAppState);
-    });
-
-    const themeCheckInterval = setInterval(updateTheme, 1000);
+    })();
 
     return () => {
-      subscription.remove();
-      clearInterval(themeCheckInterval);
+      isActive = false;
     };
-  }, [appState]);
+  }, []);
+
+  useFocusEffect(updateTheme);
 
   const showAlert = (message: string, type: 'success' | 'error' = 'error') => {
     setAlertMsg(message);
@@ -66,9 +68,12 @@ const Profile = () => {
     }
   };
 
+  const themedScrollStyle = useMemo(() => [styles.container, theme.container], [theme]);
+
   return (
     <ScrollView
-      style={[styles.container, theme.container]}
+      key={themeVersion}
+      style={themedScrollStyle}
       contentContainerStyle={styles.contentContainer}
       showsVerticalScrollIndicator={false}
     >

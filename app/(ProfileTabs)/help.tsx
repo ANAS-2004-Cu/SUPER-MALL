@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Stack, router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { Stack, router, useFocusEffect } from 'expo-router';
+import React, { useCallback, useState } from 'react';
 import {
   Linking,
   ScrollView,
@@ -49,6 +49,7 @@ const HelpTopicItem: React.FC<HelpTopicItemProps> = ({ icon, title, subtitle, ac
 
 const Help = () => {
   const [theme, setTheme] = useState(lightTheme);
+  const [themeVersion, setThemeVersion] = useState(0);
   const [alertMsg, setAlertMsg] = useState<string | null>(null);
   const [alertType, setAlertType] = useState<'success' | 'error'>('error');
   const showAlert = (message: string, type: 'success' | 'error' = 'error') => {
@@ -56,14 +57,15 @@ const Help = () => {
     setAlertType(type);
   };
 
-  const loadThemePreference = async () => {
+  const loadThemePreference = useCallback(async () => {
     try {
       const themeMode = await AsyncStorage.getItem('ThemeMode');
-      setTheme(themeMode === '2' ? darkTheme : lightTheme);
+      setTheme(themeMode === '2' ? { ...darkTheme } : { ...lightTheme });
+      setThemeVersion((version) => version + 1);
     } catch (error) {
       console.error('Error loading theme preference:', error);
     }
-  };
+  }, []);
 
   const contactMethods = [
     { icon: 'call', label: 'Call Us', color: theme.callColor, action: () => Linking.openURL('tel:+201032672532') },
@@ -99,14 +101,20 @@ const Help = () => {
     router.push(route as any);
   };
 
-  useEffect(() => {
-    loadThemePreference();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadThemePreference();
+    }, [loadThemePreference])
+  );
 
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <LinearGradient colors={theme.gradientColors  as [string, string, ...string[]]} style={styles.container}>
+      <LinearGradient
+        key={`help-theme-${themeVersion}`}
+        colors={theme.gradientColors  as [string, string, ...string[]]}
+        style={styles.container}
+      >
         {alertMsg && (
           <MiniAlert
             message={alertMsg}

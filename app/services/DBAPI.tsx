@@ -1,21 +1,28 @@
 import {
-    createUserWithEmailAndPassword,
-    sendEmailVerification,
-    sendPasswordResetEmail,
-    signInWithEmailAndPassword,
-    signOut,
-    UserCredential,
+  createUserWithEmailAndPassword,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signOut,
+  UserCredential,
 } from "firebase/auth";
 import {
-    collection,
-    doc,
-    DocumentData,
-    getDoc,
-    getDocs,
-    query,
-    setDoc,
-    updateDoc,
-    where,
+  collection,
+  doc,
+  DocumentData,
+  documentId,
+  DocumentSnapshot,
+  endAt,
+  getDoc,
+  getDocs,
+  limit,
+  orderBy,
+  query,
+  setDoc,
+  startAfter,
+  startAt,
+  updateDoc,
+  where,
 } from "firebase/firestore";
 import { auth, db } from './MAINAPI';
 
@@ -208,7 +215,6 @@ export const resetPassword = async (
         userExists = true;
       }
     });
-
     if (!userExists) {
       return {
         success: false,
@@ -457,3 +463,276 @@ export const getProductById = async (
     return null;
   }
 };
+
+/**
+ * Fetch multiple products by ids (minimal shape for curated lists).
+ */
+export const getProductsByIds = async (ids: string[]): Promise<{
+  id: string;
+  name: string;
+  price: number;
+  discount: number;
+  image: string;
+  category: string;
+  stockQuantity: number;
+  AvilableQuantityBerOeder: number;
+}[]> => {
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+
+  const chunk = <T,>(arr: T[], size: number): T[][] => {
+    const res: T[][] = [];
+    for (let i = 0; i < arr.length; i += size) res.push(arr.slice(i, i + size));
+    return res;
+  };
+
+  const idBatches = chunk(ids.map(String), 10);
+  const results: {
+    id: string;
+    name: string;
+    price: number;
+    discount: number;
+    image: string;
+    category: string;
+    stockQuantity: number;
+    AvilableQuantityBerOeder: number;
+  }[] = [];
+
+  for (const batch of idBatches) {
+    const q = query(collection(db, "products"), where(documentId(), "in", batch));
+    const snap = await getDocs(q);
+    snap.forEach((docSnap) => {
+      const data = docSnap.data() || {};
+      results.push({
+        id: docSnap.id,
+        name: data.name || "",
+        price: typeof data.price === "number" ? data.price : Number(data.price) || 0,
+        discount: typeof data.discount === "number" ? data.discount : Number(data.discount) || 0,
+        image: typeof data.image === "string" ? data.image : "",
+        category: data.category || "",
+        stockQuantity: typeof data.stockQuantity === "number" ? data.stockQuantity : Number(data.stockQuantity) || 100,
+        AvilableQuantityBerOeder: typeof data.AvilableQuantityBerOeder === "number"
+          ? data.AvilableQuantityBerOeder
+          : Number(data.AvilableQuantityBerOeder) || 0,
+      });
+    });
+  }
+
+  return results;
+};
+
+export interface ProductsPageCursor {
+  name: string;
+  id: string;
+}
+
+export interface ProductsPageResult {
+  items: {
+    id: string;
+    name: string;
+    price: number;
+    discount: number;
+    image: string;
+    category: string;
+    stockQuantity: number;
+    AvilableQuantityBerOeder: number;
+  }[];
+  cursor: ProductsPageCursor | null;
+  hasMore: boolean;
+}
+
+export type SearchProductsPageCursor = DocumentSnapshot<DocumentData> | null;
+
+export interface SearchProductsPageResult {
+  items: {
+    id: string;
+    name: string;
+    price: number;
+    discount: number;
+    image: string;
+    category: string;
+    stockQuantity: number;
+    AvilableQuantityBerOeder: number;
+  }[];
+  cursor: SearchProductsPageCursor;
+  hasMore: boolean;
+}
+
+export type FilteredProductsPageCursor = string | null;
+
+export interface FilteredProductsPageResult {
+  items: {
+    id: string;
+    name: string;
+    price: number;
+    discount: number;
+    image: string;
+    category: string;
+    stockQuantity: number;
+    AvilableQuantityBerOeder: number;
+  }[];
+  cursor: FilteredProductsPageCursor | null;
+  hasMore: boolean;
+}
+
+export const getProductsPage = async (options: {
+  limit?: number;
+  orderBy?: string;
+  orderDirection?: "asc" | "desc";
+  cursor?: ProductsPageCursor | null;
+}): Promise<ProductsPageResult> => {
+  const pageSize = typeof options.limit === "number" && options.limit > 0 ? options.limit : 20;
+  const orderField = options.orderBy || "name";
+  const orderDir = options.orderDirection || "asc";
+
+  let q = query(
+    collection(db, "products"),
+    orderBy(orderField, orderDir),
+    orderBy(documentId())
+  );
+
+  if (options.cursor) {
+    q = query(q, startAfter(options.cursor.name || "", options.cursor.id || ""));
+  }
+
+  q = query(q, limit(pageSize));
+
+  const snapshot = await getDocs(q);
+  const docs = snapshot.docs;
+  const items = docs.map((docSnap) => {
+    const data = docSnap.data() || {};
+    return {
+      id: docSnap.id,
+      name: data.name || "",
+      price: typeof data.price === "number" ? data.price : Number(data.price) || 0,
+      discount: typeof data.discount === "number" ? data.discount : Number(data.discount) || 0,
+      image: typeof data.image === "string" ? data.image : "",
+      category: data.category || "",
+      stockQuantity: typeof data.stockQuantity === "number" ? data.stockQuantity : Number(data.stockQuantity) || 100,
+      AvilableQuantityBerOeder: typeof data.AvilableQuantityBerOeder === "number"
+        ? data.AvilableQuantityBerOeder
+        : Number(data.AvilableQuantityBerOeder) || 0,
+    };
+  });
+
+  const lastDoc = docs[docs.length - 1];
+  const nextCursor = lastDoc ? { name: (lastDoc.data() || {}).name || "", id: lastDoc.id } : null;
+
+  return {
+    items,
+    cursor: nextCursor,
+    hasMore: docs.length === pageSize,
+  };
+};
+
+export const getFilteredProductsPage = async (options: {
+  limit?: number;
+  cursor?: FilteredProductsPageCursor;
+  category?: string | null;
+  priceMin?: number | null;
+  priceMax?: number | null;
+}): Promise<FilteredProductsPageResult> => {
+  const pageSize = typeof options.limit === "number" && options.limit > 0 ? options.limit : 20;
+
+  const constraints: any[] = [];
+
+  if (options.category) {
+    constraints.push(where("category", "==", options.category));
+  }
+
+  const hasPriceMin = typeof options.priceMin === "number";
+  const hasPriceMax = typeof options.priceMax === "number";
+
+  if (hasPriceMin) {
+    constraints.push(where("price", ">=", options.priceMin as number));
+  }
+
+  if (hasPriceMax) {
+    constraints.push(where("price", "<=", options.priceMax as number));
+  }
+
+  constraints.push(orderBy(documentId()));
+
+  if (options.cursor) {
+    constraints.push(startAfter(options.cursor));
+  }
+
+  constraints.push(limit(pageSize));
+
+  const snapshot = await getDocs(query(collection(db, "products"), ...constraints));
+  const docs = snapshot.docs;
+  const items = docs.map((docSnap) => {
+    const data = docSnap.data() || {};
+    return {
+      id: docSnap.id,
+      name: data.name || "",
+      price: typeof data.price === "number" ? data.price : Number(data.price) || 0,
+      discount: typeof data.discount === "number" ? data.discount : Number(data.discount) || 0,
+      image: typeof data.image === "string" ? data.image : "",
+      category: data.category || "",
+      stockQuantity: typeof data.stockQuantity === "number" ? data.stockQuantity : Number(data.stockQuantity) || 100,
+      AvilableQuantityBerOeder: typeof data.AvilableQuantityBerOeder === "number"
+        ? data.AvilableQuantityBerOeder
+        : Number(data.AvilableQuantityBerOeder) || 0,
+    };
+  });
+
+  const lastDoc = docs[docs.length - 1] || null;
+  const nextCursor = lastDoc ? lastDoc.id : null;
+
+  return {
+    items,
+    cursor: nextCursor,
+    hasMore: docs.length === pageSize,
+  };
+};
+
+export const getSearchProductsPage = async (options: {
+  limit?: number;
+  cursor?: SearchProductsPageCursor;
+  searchText: string;
+}): Promise<SearchProductsPageResult> => {
+  const pageSize = typeof options.limit === "number" && options.limit > 0 ? options.limit : 20;
+  const searchText = (options.searchText || "").trim();
+
+  const constraints: any[] = [orderBy("name", "asc")];
+
+  if (searchText) {
+    constraints.push(startAt(searchText));
+    constraints.push(endAt(`${searchText}\uf8ff`));
+  }
+
+  if (options.cursor) {
+    constraints.push(startAfter(options.cursor));
+  }
+
+  constraints.push(limit(pageSize));
+
+  const snapshot = await getDocs(query(collection(db, "products"), ...constraints));
+  const docs = snapshot.docs;
+  const items = docs.map((docSnap) => {
+    const data = docSnap.data() || {};
+    return {
+      id: docSnap.id,
+      name: data.name || "",
+      price: typeof data.price === "number" ? data.price : Number(data.price) || 0,
+      discount: typeof data.discount === "number" ? data.discount : Number(data.discount) || 0,
+      image: typeof data.image === "string" ? data.image : "",
+      category: data.category || "",
+      stockQuantity: typeof data.stockQuantity === "number" ? data.stockQuantity : Number(data.stockQuantity) || 100,
+      AvilableQuantityBerOeder: typeof data.AvilableQuantityBerOeder === "number"
+        ? data.AvilableQuantityBerOeder
+        : Number(data.AvilableQuantityBerOeder) || 0,
+    };
+  });
+
+  const lastDoc = docs[docs.length - 1] || null;
+  const nextCursor = lastDoc || null;
+
+  return {
+    items,
+    cursor: nextCursor,
+    hasMore: docs.length === pageSize,
+  };
+};
+
+// Favorites helpers were intentionally removed as they are not used by products page.

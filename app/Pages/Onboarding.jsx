@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, FlatList, Image, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { darkTheme, lightTheme } from '../../Theme/Pages/OnboardingTheme';
 
@@ -34,7 +34,7 @@ const slides = [
   },
 ];
 
-const Slide = ({ item }) => {
+const Slide = ({ item, theme }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -45,20 +45,6 @@ const Slide = ({ item }) => {
       useNativeDriver: true,
     }).start();
   }, [item.id, fadeAnim]);
-
-  const [theme, setTheme] = useState(lightTheme);
-
-  useEffect(() => {
-    const loadTheme = async () => {
-      try {
-        const themeMode = await AsyncStorage.getItem('ThemeMode');
-        setTheme(themeMode === '2' ? darkTheme : lightTheme);
-      } catch (error) {
-        console.error('Error loading theme:', error);
-      }
-    };
-    loadTheme();
-  }, []);
 
   return (
     <Animated.View style={[styles.slide, { opacity: fadeAnim }]}>
@@ -74,20 +60,31 @@ const Onboarding = () => {
   const flatListRef = useRef(null);
   const router = useRouter();
   const [theme, setTheme] = useState(lightTheme);
+  const [themeVersion, setThemeVersion] = useState(0);
 
-  useEffect(() => {
-    const loadTheme = async () => {
+  const loadTheme = useCallback(() => {
+    let isActive = true;
+    (async () => {
       try {
         const themeMode = await AsyncStorage.getItem('ThemeMode');
-        setTheme(themeMode === '2' ? darkTheme : lightTheme);
+        const isDarkMode = themeMode === '2';
+        const nextTheme = isDarkMode ? { ...darkTheme } : { ...lightTheme };
+
+        if (isActive) {
+          setTheme(() => nextTheme);
+          setThemeVersion((value) => value + 1);
+        }
       } catch (error) {
         console.error('Error loading theme:', error);
       }
+    })();
+
+    return () => {
+      isActive = false;
     };
-    loadTheme();
-    const intervalId = setInterval(loadTheme, 1000);
-    return () => clearInterval(intervalId);
   }, []);
+
+  useFocusEffect(loadTheme);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -186,12 +183,13 @@ const Onboarding = () => {
       <FlatList
         ref={flatListRef}
         data={slides}
-        renderItem={({ item }) => <Slide item={item} />}
+        renderItem={({ item }) => <Slide item={item} theme={theme} />}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={updateCurrentSlideIndex}
         keyExtractor={(item) => item.id}
+        extraData={themeVersion}
         getItemLayout={(_, index) => ({
           length: width,
           offset: width * index,

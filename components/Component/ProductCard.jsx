@@ -1,11 +1,11 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from "react";
-import { AppState, Dimensions, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useMemo } from "react";
+import { Dimensions, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Icon from "react-native-vector-icons/Feather";
-import FAIcon from 'react-native-vector-icons/FontAwesome'; // added
-import { darkTheme, lightTheme } from '../../Theme/Component/ProductCardTheme';
-import { getCart, queueCartOperation, removeCartItem } from '../../app/services/backend';
+import FAIcon from 'react-native-vector-icons/FontAwesome';
+import { lightTheme } from '../../Theme/Component/ProductCardTheme';
+import { updateUserData } from '../../app/services/DBAPI';
+import { useUserStore } from '../../store/userStore';
 
 const { width } = Dimensions.get('window');
 const cardWidth = (width / 2) - 24;
@@ -21,292 +21,237 @@ const getMaxAllowedForProduct = (product = {}) => {
 
 const ProductCard = ({
   item,
-  customTheme = null,
-  currentUser,
   onShowAlert,
-  isFavorite = false, // new prop
-  onFavoriteToggle = () => {} // new prop
+  theme = null,
 }) => {
   const router = useRouter();
-  
-  // Always use customTheme if provided from parent component
-  const [theme, setTheme] = useState(customTheme || lightTheme);
-  const [appState, setAppState] = useState(AppState.currentState);
-  const [cartItems, setCartItems] = useState([]);
-  
-  // Check if item is in stock
+  const storeUser = useUserStore((state) => state.user);
+  const setUser = useUserStore((state) => state.setUser);
+  const currentUser = storeUser || null;
+  const userId = currentUser?.uid || null;
+  const showAlert = typeof onShowAlert === 'function' ? onShowAlert : () => {};
+
+  const resolvedTheme = theme || lightTheme;
+  const themedStyles = useMemo(() => styles(resolvedTheme), [resolvedTheme]);
+
+  const favoriteIds = useMemo(() => {
+    const favs = currentUser?.Fav;
+    return Array.isArray(favs) ? favs.map((f) => String(f)) : [];
+  }, [currentUser?.Fav]);
+
+  const cartItems = useMemo(() => {
+    const rawCart = currentUser?.Cart;
+    if (!Array.isArray(rawCart)) {
+      return [];
+    }
+    return rawCart
+      .filter((entry) => entry && entry.productId)
+      .map((entry) => ({
+        productId: String(entry.productId),
+        quantity: Number(entry.quantity) || 0,
+      }));
+  }, [currentUser?.Cart]);
+
+  const isFavorite = useMemo(
+    () => favoriteIds.includes(String(item.id)),
+    [favoriteIds, item.id],
+  );
+
   const isInStock = item.stockQuantity === undefined || item.stockQuantity > 0;
-  
-  // Update theme whenever customTheme prop changes
-  useEffect(() => {
-    if (customTheme) {
-      setTheme(customTheme);
-    }
-  }, [customTheme]);
-  
-  // Function to get current theme only when customTheme is not provided
-  const checkTheme = async () => {
-    try {
-      if (!customTheme) {
-        const themeMode = await AsyncStorage.getItem("ThemeMode");
-        if (themeMode === "2") {
-          setTheme(darkTheme);
-        } else {
-          setTheme(lightTheme);
-        }
-      }
-    } catch (error) {
-      console.error("Failed to load theme:", error);
-    }
-  };
 
-  // Listen for app state changes
-  useEffect(() => {
-    // Only set up AppState listener if customTheme is not provided
-    if (!customTheme) {
-      const subscription = AppState.addEventListener("change", nextAppState => {
-        if (appState.match(/inactive|background/) && nextAppState === "active") {
-          // Check theme when app returns to active state
-          checkTheme();
-        }
-        setAppState(nextAppState);
-      });
-
-      return () => {
-        if (subscription && subscription.remove) {
-          subscription.remove();
-        }
-      };
-    }
-  }, [appState, customTheme]);
-
-  // Setup theme check on mount and periodically only if customTheme is not provided
-  useEffect(() => {
-    if (!customTheme) {
-      // Check theme on component mount
-      checkTheme();
-      
-      // Set up periodic theme check (every second)
-      const themeCheckInterval = setInterval(checkTheme, 1000);
-      
-      // Clean up interval on unmount
-      return () => {
-        clearInterval(themeCheckInterval);
-      };
-    }
-  }, [customTheme]);
-
-  // Fetch cart data when user changes
-  useEffect(() => {
-    if (currentUser) {
-      fetchUserCart();
-    } else {
-      setCartItems([]);
-    }
-  }, [currentUser]);
-
-  const fetchUserCart = async () => {
-    if (!currentUser) return;
-    try {
-      // TODO replaced firebase call: "const arr = await getUserCart(currentUser.uid);"
-      const snapshot = await getCart(currentUser.uid);
-      setCartItems(snapshot.items || []);
-    } catch {
-      setCartItems([]);
-    }
-  };
-
-  // Format price with commas
   const formatPrice = (price) => {
     return price.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   };
 
-  // Calculate discounted price
   const applyDiscount = (price, discount = 0) => Math.floor(price - (price * discount) / 100);
 
-  // Add to cart handler
-  const handleAddToCart = async () => {
-    if (!currentUser) {
-      return onShowAlert('Please sign in to add products to your shopping cart', 'error');
-    }
-
-    // Prevent adding out-of-stock items to cart
-    if (!isInStock) {
-      return onShowAlert('This item is currently out of stock', 'error');
-    }
-
-    try {
-      const existingQty = getCartQuantity(item.id);
-      const newQty = existingQty > 0 ? existingQty + 1 : 1;
-      const maxAllowed = getMaxAllowedForProduct(item);
-      if (newQty > maxAllowed) {
-        if (!isNaN(Number(item.AvilableQuantityBerOeder))) {
-          onShowAlert(`Max per order is ${item.AvilableQuantityBerOeder}`, 'error');
-        } else if (!isNaN(Number(item.stockQuantity))) {
-          onShowAlert(`Only ${item.stockQuantity} in stock`, 'error');
-        } else {
-          onShowAlert('Cannot increase quantity', 'error');
-        }
-        return;
-      }
-      // TODO replaced firebase call: "await updateCartItemQuantity(currentUser.uid, item.id, newQty);"
-      await queueCartOperation(currentUser.uid, { productId: item.id, type: 'set', quantity: newQty });
-      await fetchUserCart();
-      onShowAlert(`${item.name.split(' ').slice(0, 2).join(' ')} Added to cart`);
-    } catch {
-      onShowAlert('Failed to add product to cart', 'error');
-    }
+  const getCartQuantity = (productId) => {
+    const cartItem = cartItems.find((c) => String(c.productId) === String(productId));
+    return cartItem ? cartItem.quantity : 0;
   };
 
-  // Update cart quantity
-  const updateCartQuantity = async (newQuantity) => {
-    if (!currentUser) return;
+  const persistUserField = async (payload, nextUserSnapshot) => {
+    if (!currentUser || !userId) return false;
+    const previousUser = currentUser;
+    setUser(nextUserSnapshot || null);
+    const result = await updateUserData(String(userId), payload);
+    if (!result?.success) {
+      setUser(previousUser || null);
+    }
+    return Boolean(result?.success);
+  };
 
-    // If user decremented from 1 to 0 => remove item
-    if (newQuantity < 1) {
-      try {
-        // TODO replaced firebase call: "await removeCartItem(currentUser.uid, item.id);"
-        await removeCartItem(currentUser.uid, item.id);
-        await fetchUserCart();
-        onShowAlert('Removed from cart');
-      } catch {
-        onShowAlert('Failed to remove item', 'error');
+  const handleAddToCart = async () => {
+    if (!currentUser) {
+      return showAlert('Please sign in to add products to your shopping cart', 'error');
+    }
+
+    if (!isInStock) {
+      return showAlert('This item is currently out of stock', 'error');
+    }
+
+    const existingQty = getCartQuantity(item.id);
+    const newQty = existingQty > 0 ? existingQty + 1 : 1;
+    const maxAllowed = getMaxAllowedForProduct(item);
+
+    if (newQty > maxAllowed) {
+      if (!isNaN(Number(item.AvilableQuantityBerOeder))) {
+        showAlert(`Max per order is ${item.AvilableQuantityBerOeder}`, 'error');
+      } else if (!isNaN(Number(item.stockQuantity))) {
+        showAlert(`Only ${item.stockQuantity} in stock`, 'error');
+      } else {
+        showAlert('Cannot increase quantity', 'error');
       }
       return;
     }
+
+    const updatedCart = [...cartItems];
+    const existingIndex = updatedCart.findIndex((c) => String(c.productId) === String(item.id));
+    if (existingIndex >= 0) {
+      updatedCart[existingIndex] = { ...updatedCart[existingIndex], quantity: newQty };
+    } else {
+      updatedCart.push({ productId: String(item.id), quantity: newQty });
+    }
+
+    const nextUserSnapshot = { ...currentUser, Cart: updatedCart };
+    const ok = await persistUserField({ Cart: updatedCart }, nextUserSnapshot);
+    if (!ok) {
+      return showAlert('Failed to add product to cart', 'error');
+    }
+    showAlert(`${item.name.split(' ').slice(0, 2).join(' ')} Added to cart`);
+  };
+
+  const updateCartQuantity = async (newQuantity) => {
+    if (!currentUser) return;
 
     const maxAllowed = getMaxAllowedForProduct(item);
     if (newQuantity > maxAllowed) {
       if (!isNaN(Number(item.AvilableQuantityBerOeder)) && maxAllowed === Number(item.AvilableQuantityBerOeder)) {
-        onShowAlert(`Max per order is ${item.AvilableQuantityBerOeder}`, 'error');
+        showAlert(`Max per order is ${item.AvilableQuantityBerOeder}`, 'error');
       } else if (!isNaN(Number(item.stockQuantity))) {
-        onShowAlert(`Only ${item.stockQuantity} in stock`, 'error');
+        showAlert(`Only ${item.stockQuantity} in stock`, 'error');
       } else {
-        onShowAlert('Cannot increase quantity', 'error');
+        showAlert('Cannot increase quantity', 'error');
       }
       return;
     }
 
-    try {
-      // TODO replaced firebase call: "await updateCartItemQuantity(currentUser.uid, item.id, newQuantity);"
-      await queueCartOperation(currentUser.uid, { productId: item.id, type: 'set', quantity: newQuantity });
-      await fetchUserCart();
-    } catch {
-      onShowAlert('Failed to update cart', 'error');
+    const updatedCart = cartItems
+      .map((entry) => ({ ...entry }))
+      .filter((entry) => String(entry.productId) !== String(item.id));
+
+    if (newQuantity > 0) {
+      updatedCart.push({ productId: String(item.id), quantity: newQuantity });
+    }
+
+    const nextUserSnapshot = { ...currentUser, Cart: updatedCart };
+    const ok = await persistUserField({ Cart: updatedCart }, nextUserSnapshot);
+    if (!ok) {
+      showAlert('Failed to update cart', 'error');
     }
   };
 
-  // Toggle favorite now delegates to parent
   const toggleFavorite = async () => {
     if (!currentUser) {
-      return onShowAlert('Please sign in to add to favorites', 'error');
+      return showAlert('Please sign in to add to favorites', 'error');
     }
-    try {
-      onFavoriteToggle && onFavoriteToggle(item.id);
-    } catch {
-      onShowAlert('Failed to update favorites', 'error');
+    const nextFavorites = isFavorite
+      ? favoriteIds.filter((favId) => favId !== String(item.id))
+      : [...favoriteIds, String(item.id)];
+    const nextUserSnapshot = { ...currentUser, Fav: nextFavorites };
+    const ok = await persistUserField({ Fav: nextFavorites }, nextUserSnapshot);
+    if (!ok) {
+      return showAlert('Failed to update favorites', 'error');
     }
   };
 
-  const getCartQuantity = (productId) => {
-    const cartItem = cartItems.find(c => c.productId === productId);
-    return cartItem ? cartItem.quantity : 0;
-  };
-
-  // Cart button display
   const renderCartButton = () => {
     const quantity = getCartQuantity(item.id);
     const maxAllowed = getMaxAllowedForProduct(item);
     const disablePlus = quantity >= maxAllowed;
 
-    // If out of stock, show out of stock message
     if (!isInStock) {
       return (
-        <View style={styles(theme).bottomButtonContainer}>
-          <Text style={styles(theme).outOfStockText}>Out of Stock</Text>
+        <View style={themedStyles.bottomButtonContainer}>
+          <Text style={themedStyles.outOfStockText}>Out of Stock</Text>
         </View>
       );
     }
 
     if (quantity > 0) {
       return (
-        <View style={styles(theme).bottomButtonContainer}>
+        <View style={themedStyles.bottomButtonContainer}>
           <TouchableOpacity
-            style={[styles(theme).quantityButton, quantity === 1 && { opacity: 0.7 }]}
-            // no disabled: allow removal when quantity === 1
+            style={[themedStyles.quantityButton, quantity === 1 && { opacity: 0.7 }]}
             onPress={(e) => {
               e.stopPropagation();
               updateCartQuantity(quantity - 1);
             }}
           >
-            <Icon name="minus" size={16} color={theme.quantityTextColor} />
+            <Icon name="minus" size={16} color={resolvedTheme.quantityTextColor} />
           </TouchableOpacity>
-          <Text style={styles(theme).quantityText}>{quantity}</Text>
+          <Text style={themedStyles.quantityText}>{quantity}</Text>
           <TouchableOpacity
-            style={[styles(theme).quantityButton, disablePlus && { opacity: 0.4 }]}
+            style={[themedStyles.quantityButton, disablePlus && { opacity: 0.4 }]}
             disabled={disablePlus}
             onPress={(e) => {
               e.stopPropagation();
               updateCartQuantity(quantity + 1);
             }}
           >
-            <Icon name="plus" size={16} color={theme.quantityTextColor} />
+            <Icon name="plus" size={16} color={resolvedTheme.quantityTextColor} />
           </TouchableOpacity>
         </View>
       );
     }
 
     return (
-      <View style={styles(theme).bottomButtonContainer}>
-        <Icon name="shopping-cart" size={18} color={theme.cartIconColor} />
-        <Text style={styles(theme).addToCartText}>Add to Cart</Text>
+      <View style={themedStyles.bottomButtonContainer}>
+        <Icon name="shopping-cart" size={18} color={resolvedTheme.cartIconColor} />
+        <Text style={themedStyles.addToCartText}>Add to Cart</Text>
       </View>
     );
   };
 
-  // Price display with discount
   const renderPriceDisplay = () => {
     const hasDiscount = item.discount !== undefined && Number(item.discount) > 0;
     const discountedPrice = applyDiscount(item.price, item.discount);
     
     return (
-      <View style={styles(theme).priceContainer}>
-        <View style={styles(theme).priceWrapper}>
+      <View style={themedStyles.priceContainer}>
+        <View style={themedStyles.priceWrapper}>
           {hasDiscount ? (
             <>
-              <Text style={styles(theme).originalPrice}>EGP {formatPrice(item.price)}</Text>
-              <Text style={styles(theme).price}>EGP {formatPrice(discountedPrice)}</Text>
+              <Text style={themedStyles.originalPrice}>EGP {formatPrice(item.price)}</Text>
+              <Text style={themedStyles.price}>EGP {formatPrice(discountedPrice)}</Text>
             </>
           ) : (
-            <Text style={styles(theme).price}>EGP {formatPrice(discountedPrice)}</Text>
+            <Text style={themedStyles.price}>EGP {formatPrice(discountedPrice)}</Text>
           )}
         </View>
         {hasDiscount && (
-          <View style={styles(theme).discountBadge}>
-            <Text style={styles(theme).discountText}>Save {item.discount}%</Text>
+          <View style={themedStyles.discountBadge}>
+            <Text style={themedStyles.discountText}>Save {item.discount}%</Text>
           </View>
         )}
       </View>
     );
   };
 
-  // Stock display
   const renderStockInfo = () => {
     if (item.stockQuantity !== undefined) {
       const isLowStock = isInStock && item.stockQuantity <= 5;
-      
-      // Only show stock info if it's low stock or out of stock
       if (isLowStock || !isInStock) {
         return (
           <View style={[
-            styles(theme).stockContainer,
-            { backgroundColor: theme.stockContainerBackground }
+            themedStyles.stockContainer,
+            { backgroundColor: resolvedTheme.stockContainerBackground }
           ]}>
             <Text style={[
-              styles(theme).stockText,
+              themedStyles.stockText,
               isInStock 
-                ? { color: theme.lowStockColor, fontWeight: 'bold' }
-                : styles(theme).outOfStockText
+                ? { color: resolvedTheme.lowStockColor, fontWeight: 'bold' }
+                : themedStyles.outOfStockText
             ]}>
               {isInStock 
                 ? `Only ${item.stockQuantity} left!` 
@@ -322,15 +267,15 @@ const ProductCard = ({
 
   return (
     <TouchableOpacity 
-      style={styles(theme).cardTouchable}
+      style={themedStyles.cardTouchable}
       onPress={() => router.push({ pathname: "/Pages/singlepage", params: { id: item.id } })}
     >
       <View style={[
-        styles(theme).card,
-        !isInStock && styles(theme).outOfStockCard
+        themedStyles.card,
+        !isInStock && themedStyles.outOfStockCard
       ]}>
         <TouchableOpacity
-          style={styles(theme).favoriteButton}
+          style={themedStyles.favoriteButton}
           onPress={(e) => {
             e.stopPropagation();
             toggleFavorite();
@@ -344,28 +289,28 @@ const ProductCard = ({
         </TouchableOpacity>
 
         {item.discount !== undefined && Number(item.discount) > 0 && (
-          <View style={styles(theme).discountBadgeCorner}>
-            <Text style={styles(theme).discountBadgeText}>-{item.discount}%</Text>
+          <View style={themedStyles.discountBadgeCorner}>
+            <Text style={themedStyles.discountBadgeText}>-{item.discount}%</Text>
           </View>
         )}
 
         {!isInStock && (
-          <View style={styles(theme).outOfStockOverlay}>
-            <Text style={styles(theme).outOfStockOverlayText}>Out of Stock</Text>
+          <View style={themedStyles.outOfStockOverlay}>
+            <Text style={themedStyles.outOfStockOverlayText}>Out of Stock</Text>
           </View>
         )}
 
-        <Image source={{ uri: item.image }} style={styles(theme).image} />
-        <View style={styles(theme).textContainer}>
-          <Text style={styles(theme).title} numberOfLines={2} ellipsizeMode="tail">{item.name}</Text>
+        <Image source={{ uri: item.image }} style={themedStyles.image} />
+        <View style={themedStyles.textContainer}>
+          <Text style={themedStyles.title} numberOfLines={2} ellipsizeMode="tail">{item.name}</Text>
           {renderStockInfo()}
           {renderPriceDisplay()}
         </View>
         
         <TouchableOpacity 
           style={[
-            styles(theme).fullWidthButton,
-            !isInStock && styles(theme).disabledButton
+            themedStyles.fullWidthButton,
+            !isInStock && themedStyles.disabledButton
           ]}
           onPress={(e) => {
             e.stopPropagation();

@@ -1,9 +1,9 @@
 import { FontAwesome, Ionicons, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Stack, router } from 'expo-router';
+import { Stack, router, useFocusEffect } from 'expo-router';
 import type { ComponentProps } from 'react';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -55,17 +55,19 @@ const Orders = () => {
   const [loading, setLoading] = useState(true);
   const [totalSpent, setTotalSpent] = useState(0);
   const [theme, setTheme] = useState(lightTheme);
+  const [themeVersion, setThemeVersion] = useState(0);
   const user = useUserStore((state) => state.user);
   const userId = user?.uid || user?.id || null;
 
-  const loadThemePreference = async () => {
+  const loadThemePreference = useCallback(async () => {
     try {
       const themeMode = await AsyncStorage.getItem('ThemeMode');
-      setTheme(themeMode === '2' ? darkTheme : lightTheme);
+      setTheme(themeMode === '2' ? { ...darkTheme } : { ...lightTheme });
+      setThemeVersion((version) => version + 1);
     } catch (error) {
       console.error('Error loading theme preference:', error);
     }
-  };
+  }, []);
 
   const normalizeNumberValue = (value: unknown, fallback: number) => {
     const parsed = Number(value);
@@ -418,14 +420,17 @@ const Orders = () => {
     };
   }, [userId]);
 
-  useEffect(() => {
-    loadThemePreference();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadThemePreference();
+    }, [loadThemePreference])
+  );
 
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <LinearGradient
+        key={`orders-theme-${themeVersion}`}
         colors={theme.gradientColors as [string, string, ...string[]]}
         style={styles.container}
       >

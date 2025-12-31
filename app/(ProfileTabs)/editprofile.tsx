@@ -2,8 +2,8 @@ import { FontAwesome, Ionicons, MaterialCommunityIcons, MaterialIcons } from '@e
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Stack, router } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import { Stack, router, useFocusEffect } from 'expo-router';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Dimensions, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { darkTheme, lightTheme } from '../../Theme/ProfileTabs/EditProfileTheme';
 import MiniAlert from '../../components/Component/MiniAlert';
@@ -25,12 +25,9 @@ const EditProfile = () => {
   const [imageModalVisible, setImageModalVisible] = useState<boolean>(false);
   const [errors, setErrors] = useState<{ username?: string; fullname?: string; phone?: string; }>({});
   const [theme, setTheme] = useState(lightTheme);
+  const [themeVersion, setThemeVersion] = useState(0);
 
   const scaleAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    loadTheme();
-  }, []);
 
   useEffect(() => {
     if (user) {
@@ -41,14 +38,22 @@ const EditProfile = () => {
     }
   }, [user]);
 
-  const loadTheme = async () => {
+  const loadTheme = useCallback(async () => {
     try {
       const themeMode = await AsyncStorage.getItem('ThemeMode');
-      setTheme(themeMode === '2' ? darkTheme : lightTheme);
+      const isDark = themeMode === '2';
+      setTheme(isDark ? { ...darkTheme } : { ...lightTheme });
+      setThemeVersion((version) => version + 1);
     } catch (error) {
       console.error('Error loading theme:', error);
     }
-  };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadTheme();
+    }, [loadTheme])
+  );
 
   const showAlert = (message: string, type: 'success' | 'error', duration = 3000) => {
     setAlertMessage(message);
@@ -281,7 +286,11 @@ const EditProfile = () => {
           />
         )}
 
-        <LinearGradient colors={theme.gradientColors as [string, string, ...string[]]} style={styles.gradientContainer}>
+        <LinearGradient
+          key={`edit-profile-theme-${themeVersion}`}
+          colors={theme.gradientColors as [string, string, ...string[]]}
+          style={styles.gradientContainer}
+        >
           <KeyboardAvoidingView
             behavior={Platform.OS === "ios" ? "padding" : "height"}
             style={{ flex: 1 }}

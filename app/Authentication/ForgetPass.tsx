@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Dimensions, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import MiniAlert from '../../components/Component/MiniAlert';
 import { resetPassword } from '../services/DBAPI.tsx';
@@ -16,28 +16,32 @@ const ForgetPass = () => {
   const [alertType, setAlertType] = useState<'success' | 'error'>('success');
   const [load, setLoad] = useState(false);
   const [theme, setTheme] = useState(lightTheme);
+  const [themeVersion, setThemeVersion] = useState(0);
 
-  // Load theme from AsyncStorage
-  useEffect(() => {
-    const loadTheme = async () => {
+  const loadTheme = useCallback(() => {
+    let isActive = true;
+
+    (async () => {
       try {
         const themeMode = await AsyncStorage.getItem('ThemeMode');
-        if (themeMode === '2') {
-          setTheme(darkTheme);
-        } else {
-          setTheme(lightTheme);
+        const isDarkMode = themeMode === '2';
+        const nextTheme = isDarkMode ? { ...darkTheme } : { ...lightTheme };
+
+        if (isActive) {
+          setTheme(() => nextTheme);
+          setThemeVersion((value) => value + 1);
         }
       } catch (error) {
         console.error('Error loading theme:', error);
       }
+    })();
+
+    return () => {
+      isActive = false;
     };
-    
-    loadTheme();
-    
-    // Listen for theme changes
-    const intervalId = setInterval(loadTheme, 1000);
-    return () => clearInterval(intervalId);
   }, []);
+
+  useFocusEffect(loadTheme);
 
   const showAlert = (message: React.SetStateAction<string | null>, type: 'success' | 'error') => {
     setLoad(true);
@@ -90,8 +94,7 @@ const ForgetPass = () => {
     router.back();
   }
 
-  // Create styles with the current theme
-  const dynamicStyles = StyleSheet.create({
+  const dynamicStyles = useMemo(() => StyleSheet.create({
     fl: {
       flex: 1,
       justifyContent: 'flex-start',
@@ -165,10 +168,10 @@ const ForgetPass = () => {
       fontSize: 16,
       fontWeight: '600',
     },
-  });
+  }), [theme]);
 
   return (
-    <View style={dynamicStyles.fl}>
+    <View style={dynamicStyles.fl} key={themeVersion}>
       {alertMsg && (
         <MiniAlert
           message={alertMsg}

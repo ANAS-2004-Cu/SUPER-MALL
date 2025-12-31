@@ -1,6 +1,5 @@
 import { MaterialIcons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { useEffect, useState } from 'react';
+import React, { useMemo } from 'react';
 import { ActivityIndicator, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { darkTheme, lightTheme } from '../Theme/Modal/DeleteModalTheme';
 
@@ -14,6 +13,8 @@ interface DeleteModalProps {
     warningMessage?: string;
     confirmButtonText?: string;
     cancelButtonText?: string;
+    theme?: typeof lightTheme;
+    isDarkMode?: boolean;
 }
 
 const DeleteModal = ({
@@ -25,21 +26,16 @@ const DeleteModal = ({
     message = "Are you sure you want to delete this item?",
     warningMessage,
     confirmButtonText = "Delete",
-    cancelButtonText = "Cancel"
+    cancelButtonText = "Cancel",
+    theme,
+    isDarkMode
 }: DeleteModalProps) => {
-    const [currentTheme, setCurrentTheme] = useState(lightTheme);
-
-    useEffect(() => {
-        const getThemeMode = async () => {
-            try {
-                const themeMode = await AsyncStorage.getItem('ThemeMode');
-                setCurrentTheme(themeMode === '2' ? darkTheme : lightTheme);
-            } catch {
-                setCurrentTheme(lightTheme);
-            }
-        };
-        getThemeMode();
-    }, [visible]);
+    const currentTheme = useMemo(() => {
+        if (theme) {
+            return { ...theme };
+        }
+        return isDarkMode ? { ...darkTheme } : { ...lightTheme };
+    }, [theme, isDarkMode]);
 
     const styles = StyleSheet.create({
         deleteModalOverlay: {

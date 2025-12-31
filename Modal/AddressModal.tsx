@@ -1,6 +1,6 @@
 import { AntDesign } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import MiniAlert from '../components/Component/MiniAlert';
 import { darkTheme, lightTheme } from '../Theme/Modal/AddressModalTheme';
@@ -31,7 +31,7 @@ const AddressModal: React.FC<AddressModalProps> = ({
     onSubmit,
     currentAddress,
     isEditing,
-    loading
+    loading,
 }) => {
     const [formData, setFormData] = useState<Address>({
         id: '',
@@ -45,21 +45,23 @@ const AddressModal: React.FC<AddressModalProps> = ({
     });
     const [alertMsg, setAlertMsg] = useState<string | null>(null);
     const [alertType, setAlertType] = useState<'success' | 'error'>('error');
-    const [currentTheme, setCurrentTheme] = useState(lightTheme);
+    const [isDarkMode, setIsDarkMode] = useState(false);
+    const currentTheme = useMemo(() => (
+        isDarkMode ? { ...darkTheme } : { ...lightTheme }
+    ), [isDarkMode]);
 
     const [cityOptions, setCityOptions] = useState<string[]>(['cairo', 'giza', 'tnta', 'gharbia']);
     const [showCityModal, setShowCityModal] = useState(false);
 
     useEffect(() => {
-        const getThemeMode = async () => {
+        const loadTheme = async () => {
             try {
                 const themeMode = await AsyncStorage.getItem('ThemeMode');
-                setCurrentTheme(themeMode === '2' ? darkTheme : lightTheme);
-            } catch {
-                setCurrentTheme(lightTheme);
+                setIsDarkMode(themeMode === '2');
+            } catch (error) {
+                setIsDarkMode(false);
             }
         };
-        getThemeMode();
 
         const loadRegions = async () => {
             if (!visible) return;
@@ -81,6 +83,8 @@ const AddressModal: React.FC<AddressModalProps> = ({
                 console.error('Failed to load available regions from storage:', error);
             }
         };
+
+        loadTheme();
         loadRegions();
     }, [visible]);
 

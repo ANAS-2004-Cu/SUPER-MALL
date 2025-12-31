@@ -23,12 +23,12 @@ const WelcomeScreen = () => {
       setTimeout(async () => {
         try {
           const loginId = await AsyncStorage.getItem('LoginID');
+          const manageResponse = await fetchManageDocs();
+          await AsyncStorage.setItem('unUpadtingManageDocs', JSON.stringify(manageResponse.unUpadtingManageDocs));
+          await AsyncStorage.setItem('UpadtingManageDocs', JSON.stringify(manageResponse.UpadtingManageDocs));
           if (loginId) {
             try {
               const userData = await getUserData(loginId);
-              const manageResponse = await fetchManageDocs();
-              await AsyncStorage.setItem('unUpadtingManageDocs', JSON.stringify(manageResponse.unUpadtingManageDocs));
-              await AsyncStorage.setItem('UpadtingManageDocs', JSON.stringify(manageResponse.UpadtingManageDocs));
               if (userData) {
                 useUserStore.getState().login(userData);
                 

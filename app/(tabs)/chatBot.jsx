@@ -1,9 +1,10 @@
 import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, AppState, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { ActivityIndicator, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { useFocusEffect } from 'expo-router';
 import { darkTheme, lightTheme } from '../../Theme/Tabs/ChatBotTheme';
 import context from '../ChatBot/context';
 
@@ -26,27 +27,32 @@ export default function GeminiChat() {
   const [loading, setLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(true);
   const [theme, setTheme] = useState(lightTheme);
-  const [appState, setAppState] = useState(AppState.currentState);
+  const [themeVersion, setThemeVersion] = useState(0);
 
-  const checkTheme = async () => {
-    const themeMode = await AsyncStorage.getItem("ThemeMode");
-    setTheme(themeMode === "2" ? darkTheme : lightTheme);
-  };
+  const loadTheme = useCallback(() => {
+    let isActive = true;
 
-  useEffect(() => {
-    checkTheme();
-    const subscription = AppState.addEventListener("change", nextAppState => {
-      if (appState.match(/inactive|background/) && nextAppState === "active") {
-        checkTheme();
+    (async () => {
+      try {
+        const themeMode = await AsyncStorage.getItem("ThemeMode");
+        const isDarkMode = themeMode === "2";
+        const nextTheme = isDarkMode ? { ...darkTheme } : { ...lightTheme };
+
+        if (isActive) {
+          setTheme(() => nextTheme);
+          setThemeVersion((value) => value + 1);
+        }
+      } catch (error) {
+        console.error("Failed to load theme:", error);
       }
-      setAppState(nextAppState);
-    });
-    const themeCheckInterval = setInterval(checkTheme, 1000);
+    })();
+
     return () => {
-      subscription.remove();
-      clearInterval(themeCheckInterval);
+      isActive = false;
     };
-  }, [appState]);
+  }, []);
+
+  useFocusEffect(loadTheme);
 
   const sendMessage = async () => {
     if (!input.trim()) return;
@@ -119,7 +125,7 @@ export default function GeminiChat() {
   );
 
   return (
-    <View style={[styles.container, theme.container]}>
+    <View style={[styles.container, theme.container]} key={themeVersion}>
       <View style={styles.headerContainer}>
         <Text style={[styles.headerText, theme.headerText]}>I&apos;m here for you, anytime!</Text>
       </View>
@@ -127,6 +133,7 @@ export default function GeminiChat() {
         data={messages}
         renderItem={renderItem}
         keyExtractor={(_, idx) => idx.toString()}
+        extraData={themeVersion}
         contentContainerStyle={styles.messagesContainer}
       />
 
@@ -152,7 +159,7 @@ export default function GeminiChat() {
           value={input}
           onChangeText={setInput}
           placeholder="Type your message..."
-          placeholderTextColor={theme === darkTheme ? "#8a8a8a" : "#757575"}
+          placeholderTextColor={theme.placeholderTextColor || (theme.isDark ? "#8a8a8a" : "#757575")}
           editable={!loading}
         />
 

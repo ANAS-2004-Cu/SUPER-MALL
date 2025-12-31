@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useState } from "react";
 import {
     ActivityIndicator,
     Dimensions,
@@ -21,6 +21,7 @@ const AdDetailScreen = () => {
     const [decodedContent, setDecodedContent] = useState("");
     const router = useRouter();
     const [theme, setTheme] = useState(lightTheme);
+    const [themeVersion, setThemeVersion] = useState(0);
     const [loading, setLoading] = useState(true);
     const [imageAspectRatio, setImageAspectRatio] = useState(1);
     const windowWidth = Dimensions.get('window').width;
@@ -60,23 +61,30 @@ const AdDetailScreen = () => {
         }
     }, [decodedImage]);
 
-    useEffect(() => {
-        const checkTheme = async () => {
+    const checkTheme = useCallback(() => {
+        let isActive = true;
+
+        (async () => {
             try {
                 const themeMode = await AsyncStorage.getItem("ThemeMode");
-                setTheme(themeMode === "2" ? darkTheme : lightTheme);
+                const isDarkMode = themeMode === "2";
+                const nextTheme = isDarkMode ? { ...darkTheme } : { ...lightTheme };
+
+                if (isActive) {
+                    setTheme(() => nextTheme);
+                    setThemeVersion((value) => value + 1);
+                }
             } catch (error) {
                 console.log("Error loading theme:", error);
             }
-        };
-
-        checkTheme();
-        const themeCheckInterval = setInterval(checkTheme, 1000);
+        })();
 
         return () => {
-            clearInterval(themeCheckInterval);
+            isActive = false;
         };
     }, []);
+
+    useFocusEffect(checkTheme);
 
     // Calculate image height based on screen width and image aspect ratio
     const imageHeight = windowWidth / imageAspectRatio;
@@ -97,6 +105,7 @@ const AdDetailScreen = () => {
                 }}
             />
             <ScrollView 
+                key={themeVersion}
                 style={[styles.container, { backgroundColor: theme.background }]}
                 contentContainerStyle={styles.contentContainer}
             >

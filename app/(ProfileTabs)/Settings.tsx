@@ -71,6 +71,7 @@ const Settings = () => {
     const [notifications, setNotifications] = useState(true);
     const [darkMode, setDarkMode] = useState(false);
     const [theme, setTheme] = useState(lightTheme);
+    const [themeVersion, setThemeVersion] = useState(0);
     const [showDropdown, setShowDropdown] = useState<boolean>(false);
     const [availableCategories, setAvailableCategories] = useState<Category[]>([]);
     const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
@@ -90,16 +91,17 @@ const Settings = () => {
         return user;
     };
 
-    const loadThemeMode = async () => {
+    const loadThemeMode = useCallback(async () => {
         try {
             const savedThemeMode = await AsyncStorage.getItem("ThemeMode");
             const isDarkMode = savedThemeMode === "2";
             setDarkMode(isDarkMode);
-            setTheme(isDarkMode ? darkTheme : lightTheme);
+            setTheme(isDarkMode ? { ...darkTheme } : { ...lightTheme });
+            setThemeVersion((version) => version + 1);
         } catch (error) {
-            setTheme(lightTheme);
+            setTheme({ ...lightTheme });
         }
-    };
+    }, []);
 
     const handleDarkModeToggle = async (value: boolean) => {
         try {
@@ -254,7 +256,7 @@ const Settings = () => {
 
     useEffect(() => {
         loadThemeMode();
-    }, []);
+    }, [loadThemeMode]);
 
     useEffect(() => {
         loadUserPreferredCategories();
@@ -263,13 +265,17 @@ const Settings = () => {
     useFocusEffect(
         useCallback(() => {
             loadThemeMode();
-        }, [])
+        }, [loadThemeMode])
     );
 
     return (
         <>
             <Stack.Screen options={{ headerShown: false }} />
-            <LinearGradient colors={theme.colors.gradient  as [string, string, ...string[]]} style={theme.styles.container}>
+            <LinearGradient
+                key={`settings-theme-${themeVersion}`}
+                colors={theme.colors.gradient  as [string, string, ...string[]]}
+                style={theme.styles.container}
+            >
                 {alertMsg && (
                     <MiniAlert
                         message={alertMsg}

@@ -1,7 +1,7 @@
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Stack, router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { Stack, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
 import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { darkTheme, lightTheme } from '../../Theme/Pages/OrderSummaryTheme';
 
@@ -105,20 +105,33 @@ const getPaymentDisplay = (method, walletLastFour, cardLastFour) => {
 
 const OrderSummary = () => {
     const [theme, setTheme] = useState(lightTheme);
+    const [themeVersion, setThemeVersion] = useState(0);
     const params = useLocalSearchParams();
 
-    useEffect(() => {
-        const loadThemePreference = async () => {
+    const loadThemePreference = useCallback(() => {
+        let isActive = true;
+
+        (async () => {
             try {
                 const themeMode = await AsyncStorage.getItem('ThemeMode');
-                setTheme(themeMode === '2' ? darkTheme : lightTheme);
+                const isDarkMode = themeMode === '2';
+                const nextTheme = isDarkMode ? { ...darkTheme } : { ...lightTheme };
+
+                if (isActive) {
+                    setTheme(() => nextTheme);
+                    setThemeVersion((value) => value + 1);
+                }
             } catch (error) {
                 console.error('Failed to load theme preference:', error);
             }
-        };
+        })();
 
-        loadThemePreference();
+        return () => {
+            isActive = false;
+        };
     }, []);
+
+    useFocusEffect(loadThemePreference);
 
     const order = useMemo(() => {
         if (!params?.order) {
@@ -181,6 +194,7 @@ const OrderSummary = () => {
         <>
             <Stack.Screen options={{ headerShown: false }} />
             <ScrollView
+                key={themeVersion}
                 style={[styles.container, { backgroundColor: theme.screenBackground }]}
                 contentContainerStyle={styles.contentContainer}
             >

@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import { Dimensions, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import MiniAlert from '../../components/Component/MiniAlert';
 import { useUserStore } from '../../store/userStore';
@@ -23,20 +23,31 @@ const CategorySelection = () => {
   const [loadingCats, setLoadingCats] = useState(true);
   const [currentUserId, setCurrentUserId] = useState(null);
   const [theme, setTheme] = useState(lightTheme);
+  const [themeVersion, setThemeVersion] = useState(0);
 
-  useEffect(() => {
-    const loadTheme = async () => {
+  const loadTheme = useCallback(() => {
+    let isActive = true;
+    (async () => {
       try {
         const themeMode = await AsyncStorage.getItem('ThemeMode');
-        setTheme(themeMode === '2' ? darkTheme : lightTheme);
+        const isDarkMode = themeMode === '2';
+        const nextTheme = isDarkMode ? { ...darkTheme } : { ...lightTheme };
+
+        if (isActive) {
+          setTheme(() => nextTheme);
+          setThemeVersion((value) => value + 1);
+        }
       } catch (error) {
         console.error('Error loading theme:', error);
       }
+    })();
+
+    return () => {
+      isActive = false;
     };
-    loadTheme();
-    const intervalId = setInterval(loadTheme, 1000);
-    return () => clearInterval(intervalId);
   }, []);
+
+  useFocusEffect(loadTheme);
 
   const showAlert = (message, type = 'error') => {
     setAlertMessage(message);
@@ -137,7 +148,7 @@ const CategorySelection = () => {
   };
 
   return (
-    <View style={[styles.container, theme.container]}>
+    <View style={[styles.container, theme.container]} key={themeVersion}>
       <View style={styles.header}>
         <Text style={[styles.headerTitle, theme.headerTitle]}>Choose Your Favorite Categories</Text>
         <Text style={[styles.headerSubtitle, theme.headerSubtitle]}>

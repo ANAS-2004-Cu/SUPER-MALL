@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useEffect, useState } from 'react';
 import {
     Dimensions,
     Modal,
@@ -11,7 +12,6 @@ import {
     View
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
-import { getCollection } from '../Firebase/Firebase';
 import { darkModalTheme, lightModalTheme } from '../Theme/Modal/FilterModalTheme';
 
 const { height } = Dimensions.get('window');
@@ -19,146 +19,100 @@ const { height } = Dimensions.get('window');
 const FilterModal = ({
     visible,
     onClose,
-    categories = [],
     selectedCategory,
-    sortBy,
     onApply,
-    maxPrice = 10000,
-    darkMode = false,
-    topSelling = false,
-    newArrival = false
+    darkMode = false
 }) => {
-    const [localCategory, setLocalCategory] = useState(selectedCategory);
-    const [localSortBy, setLocalSortBy] = useState(sortBy);
-    const [localTopSelling, setLocalTopSelling] = useState(topSelling);
-    const [localNewArrival, setLocalNewArrival] = useState(newArrival);
-    const [minPrice, setMinPrice] = useState('0');
-    const [maxPriceValue, setMaxPriceValue] = useState(maxPrice.toString());
-    const [topSellingIds, setTopSellingIds] = useState([]);
-    const [newArrivalIds, setNewArrivalIds] = useState([]);
-    const [selectedSpecialCategory, setSelectedSpecialCategory] = useState(null);
-    const [productsInCategory, setProductsInCategory] = useState({});
-    const [specialMode, setSpecialMode] = useState(null);
+    const [localCategory, setLocalCategory] = useState(
+        selectedCategory && selectedCategory !== 'All' ? selectedCategory : null
+    );
+    const [selectedType, setSelectedType] = useState(null);
+    const [localSort, setLocalSort] = useState(null);
+    const [minPrice, setMinPrice] = useState(null);
+    const [maxPrice, setMaxPrice] = useState(null);
+    const [availableCategoryNames, setAvailableCategoryNames] = useState([]);
 
     const theme = darkMode ? darkModalTheme : lightModalTheme;
 
-    const priceRanges = [
-        { label: 'All Prices', min: '0', max: maxPrice.toString() },
-        { label: 'Under 500', min: '0', max: '500' },
-        { label: '500 - 1000', min: '500', max: '1000' },
-        { label: '1000 - 2000', min: '1000', max: '2000' },
-        { label: '2000 - 5000', min: '2000', max: '5000' },
-        { label: 'Over 5000', min: '5000', max: maxPrice.toString() }
-    ];
-
     useEffect(() => {
         if (visible) {
-            setLocalCategory(selectedCategory);
-            setLocalSortBy(sortBy);
-            setLocalTopSelling(topSelling);
-            setLocalNewArrival(newArrival);
-            setMinPrice('0');
-            setMaxPriceValue(maxPrice.toString());
-            setSpecialMode(null);
-            setSelectedSpecialCategory(null);
+            setLocalCategory(selectedCategory && selectedCategory !== 'All' ? selectedCategory : null);
+            setSelectedType(null);
+            setLocalSort(null);
+            setMinPrice(null);
+            setMaxPrice(null);
         }
-    }, [visible, selectedCategory, sortBy, maxPrice, topSelling, newArrival]);
+    }, [visible, selectedCategory]);
 
     useEffect(() => {
-        getCollection("Manage").then(res => {
-            if (res.success && Array.isArray(res.data) && res.data.length > 0) {
-                const doc = res.data[0];
-                setTopSellingIds(Array.isArray(doc.TopSelling) ? doc.TopSelling : []);
-                setNewArrivalIds(Array.isArray(doc.NewArrival) ? doc.NewArrival : []);
-            }
-        });
-    }, []);
+        const loadCategoriesFromStorage = async () => {
+            try {
+                const stored = await AsyncStorage.getItem('unUpadtingManageDocs');
+                if (!stored) {
+                    setAvailableCategoryNames(['All']);
+                    return;
+                }
 
-    useEffect(() => {
-        getCollection("products").then(res => {
-            if (res.success && Array.isArray(res.data)) {
-                const map = {};
-                res.data.forEach(p => {
-                    if (p.id && p.category) map[p.id] = p.category;
+                const parsed = JSON.parse(stored);
+                const rawCategories = parsed?.AvilableCategory || [];
+                const names = rawCategories.map((item, index) => {
+                    if (typeof item === 'string' && item.includes(',')) {
+                        const [name] = item.split(',');
+                        return name.trim();
+                    }
+                    if (item && typeof item === 'object' && item.name) {
+                        return String(item.name).trim();
+                    }
+                    // fallback: keep string as-is
+                    return typeof item === 'string' ? item.trim() : `Category-${index}`;
                 });
-                setProductsInCategory(map);
+
+                const uniqueNames = Array.from(new Set(['All', ...names.filter(Boolean)]));
+                setAvailableCategoryNames(uniqueNames);
+            } catch (error) {
+                console.error('Error loading categories from storage:', error);
+                setAvailableCategoryNames(['All']);
             }
-        });
+        };
+
+        loadCategoriesFromStorage();
     }, []);
 
     const handleApply = () => {
-        const minPriceNum = parseInt(minPrice) || 0;
-        const maxPriceNum = parseInt(maxPriceValue) || maxPrice;
         onApply({
+            type: selectedType,
             category: localCategory,
-            sortBy: localSortBy,
-            priceRange: [minPriceNum, maxPriceNum],
-            topSelling: !!localTopSelling,
-            newArrival: !!localNewArrival
+            sort: localSort,
+            priceRange: {
+                min: minPrice,
+                max: maxPrice,
+            },
         });
         onClose();
     };
 
     const handleReset = () => {
-        setLocalCategory('All');
-        setLocalSortBy('name');
-        setLocalTopSelling(false);
-        setLocalNewArrival(false);
-        setMinPrice('0');
-        setMaxPriceValue(maxPrice.toString());
-        setSpecialMode(null);
-        setSelectedSpecialCategory(null);
+        setLocalCategory(null);
+        setSelectedType(null);
+        setLocalSort(null);
+        setMinPrice(null);
+        setMaxPrice(null);
     };
 
-    const setPriceRange = (min, max) => {
-        setMinPrice(min);
-        setMaxPriceValue(max);
+    const handleTypeSelect = (type) => {
+        setSelectedType(prev => (prev === type ? null : type));
     };
 
-    const hasTopCurated = topSellingIds && topSellingIds.length > 0;
-    const hasNewCurated = newArrivalIds && newArrivalIds.length > 0;
-
-    const applyCurated = (mode) => {
-        const ids = mode === 'topSelling' ? topSellingIds : newArrivalIds;
-        // Prefer special category, otherwise fall back to the modal's selected category
-        const effectiveCat =
-            (selectedSpecialCategory && selectedSpecialCategory !== 'All')
-                ? selectedSpecialCategory
-                : (localCategory && localCategory !== 'All' ? localCategory : null);
-
-        let filteredIds = ids;
-        if (effectiveCat) {
-            filteredIds = ids.filter(id => productsInCategory[id] === effectiveCat);
-        }
-
-        onApply({
-            sectionIds: filteredIds,
-            sectionTitle: mode === 'topSelling'
-                ? (effectiveCat ? `Top Selling - ${effectiveCat}` : 'Top Selling')
-                : (effectiveCat ? `New Arrivals - ${effectiveCat}` : 'New Arrivals')
-        });
-        onClose();
-    };
-
-    const handleTopSelling = () => {
-        if (hasTopCurated) {
-            if (!specialMode) setSpecialMode('topSelling');
-            else if (specialMode === 'topSelling') applyCurated('topSelling');
+    const handleCategoryPress = (category) => {
+        if (category === 'All') {
+            setLocalCategory(null);
             return;
         }
-        setLocalTopSelling(v => !v);
-        setSpecialMode(null);
+        setLocalCategory(category);
     };
 
-    const handleNewArrival = () => {
-        if (hasNewCurated) {
-            if (!specialMode) setSpecialMode('newArrival');
-            else if (specialMode === 'newArrival') applyCurated('newArrival');
-            return;
-        }
-        setLocalNewArrival(v => !v);
-        setSpecialMode(null);
-    };
+    const renderedCategories = availableCategoryNames.length ? availableCategoryNames : ['All'];
+    const activeCategory = localCategory || 'All';
 
     return (
         <Modal
@@ -182,74 +136,62 @@ const FilterModal = ({
                                 <TouchableOpacity
                                     style={[
                                         styles.toggleButton,
-                                        specialMode === 'topSelling' ? { backgroundColor: theme.selectedChipBackground, borderColor: theme.selectedChipBorderColor } : { borderColor: theme.chipBorderColor, backgroundColor: theme.chipBackground }
+                                        selectedType === 'TopSelling'
+                                            ? { backgroundColor: theme.selectedChipBackground, borderColor: theme.selectedChipBorderColor }
+                                            : { borderColor: theme.chipBorderColor, backgroundColor: theme.chipBackground }
                                     ]}
-                                    onPress={handleTopSelling}
+                                    onPress={() => handleTypeSelect('TopSelling')}
                                 >
                                     <Icon
-                                        name={
-                                            hasTopCurated
-                                                ? (specialMode === 'topSelling' ? 'check-circle' : 'circle')
-                                                : (localTopSelling ? 'check-circle' : 'circle')
-                                        }
+                                        name={selectedType === 'TopSelling' ? 'check-circle' : 'circle'}
                                         size={18}
-                                        color={
-                                            hasTopCurated
-                                                ? (specialMode === 'topSelling' ? theme.checkIconActiveColor : theme.checkIconInactiveColor)
-                                                : (localTopSelling ? theme.checkIconActiveColor : theme.checkIconInactiveColor)
-                                        }
+                                        color={selectedType === 'TopSelling' ? theme.checkIconActiveColor : theme.checkIconInactiveColor}
                                     />
                                     <Text style={[styles.toggleText, { color: theme.textColor }]}>Top Selling</Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity
                                     style={[
                                         styles.toggleButton,
-                                        specialMode === 'newArrival' ? { backgroundColor: theme.selectedChipBackground, borderColor: theme.selectedChipBorderColor } : { borderColor: theme.chipBorderColor, backgroundColor: theme.chipBackground }
+                                        selectedType === 'NewArrival'
+                                            ? { backgroundColor: theme.selectedChipBackground, borderColor: theme.selectedChipBorderColor }
+                                            : { borderColor: theme.chipBorderColor, backgroundColor: theme.chipBackground }
                                     ]}
-                                    onPress={handleNewArrival}
+                                    onPress={() => handleTypeSelect('NewArrival')}
                                 >
                                     <Icon
-                                        name={
-                                            hasNewCurated
-                                                ? (specialMode === 'newArrival' ? 'check-circle' : 'circle')
-                                                : (localNewArrival ? 'check-circle' : 'circle')
-                                        }
+                                        name={selectedType === 'NewArrival' ? 'check-circle' : 'circle'}
                                         size={18}
-                                        color={
-                                            hasNewCurated
-                                                ? (specialMode === 'newArrival' ? theme.checkIconActiveColor : theme.checkIconInactiveColor)
-                                                : (localNewArrival ? theme.checkIconActiveColor : theme.checkIconInactiveColor)
-                                        }
+                                        color={selectedType === 'NewArrival' ? theme.checkIconActiveColor : theme.checkIconInactiveColor}
                                     />
                                     <Text style={[styles.toggleText, { color: theme.textColor }]}>New Arrival</Text>
                                 </TouchableOpacity>
                             </View>
 
-                            {specialMode && hasTopCurated && specialMode === 'topSelling' && (
+                            <ScrollView style={styles.scrollContent}>
                                 <View style={[styles.section, { borderBottomColor: theme.borderColor }]}>
-                                    <Text style={[styles.sectionTitle, { color: theme.sectionTitleColor }]}>Choose Category</Text>
+                                    <Text style={[styles.sectionTitle, { color: theme.sectionTitleColor }]}>Categories</Text>
                                     <View style={styles.categoriesContainer}>
-                                        {categories.map(category => (
+                                        {renderedCategories.map(category => (
                                             <TouchableOpacity
                                                 key={category}
                                                 style={[
                                                     styles.categoryChip,
                                                     {
-                                                        backgroundColor: selectedSpecialCategory === category
+                                                        backgroundColor: activeCategory === category
                                                             ? theme.selectedChipBackground
                                                             : theme.chipBackground,
-                                                        borderColor: selectedSpecialCategory === category
+                                                        borderColor: activeCategory === category
                                                             ? theme.selectedChipBorderColor
                                                             : theme.chipBorderColor
                                                     }
                                                 ]}
-                                                onPress={() => setSelectedSpecialCategory(category)}
+                                                onPress={() => handleCategoryPress(category)}
                                             >
                                                 <Text
                                                     style={[
                                                         styles.categoryChipText,
                                                         {
-                                                            color: selectedSpecialCategory === category
+                                                            color: activeCategory === category
                                                                 ? theme.selectedChipTextColor
                                                                 : theme.chipTextColor
                                                         }
@@ -260,241 +202,129 @@ const FilterModal = ({
                                             </TouchableOpacity>
                                         ))}
                                     </View>
-                                    <View style={styles.specialApplyContainer}>
-                                        <TouchableOpacity
-                                            style={styles.specialApplyButton}
-                                            onPress={() => applyCurated('topSelling')}
-                                        >
-                                            <Text style={styles.specialApplyText}>Apply</Text>
-                                        </TouchableOpacity>
-                                    </View>
                                 </View>
-                            )}
-
-                            {specialMode && hasNewCurated && specialMode === 'newArrival' && (
                                 <View style={[styles.section, { borderBottomColor: theme.borderColor }]}>
-                                    <Text style={[styles.sectionTitle, { color: theme.sectionTitleColor }]}>Choose Category</Text>
-                                    <View style={styles.categoriesContainer}>
-                                        {categories.map(category => (
-                                            <TouchableOpacity
-                                                key={category}
+                                    <Text style={[styles.sectionTitle, { color: theme.sectionTitleColor }]}>Price Range</Text>
+                                    <View style={styles.customPriceInputContainer}>
+                                        <View style={styles.priceInputWrapper}>
+                                            <Text style={[styles.priceInputLabel, { color: theme.labelColor }]}>Min</Text>
+                                            <TextInput
                                                 style={[
-                                                    styles.categoryChip,
+                                                    styles.priceInput,
                                                     {
-                                                        backgroundColor: selectedSpecialCategory === category
-                                                            ? theme.selectedChipBackground
-                                                            : theme.chipBackground,
-                                                        borderColor: selectedSpecialCategory === category
-                                                            ? theme.selectedChipBorderColor
-                                                            : theme.chipBorderColor
+                                                        backgroundColor: theme.inputBackground,
+                                                        borderColor: theme.inputBorderColor,
+                                                        color: theme.textColor
                                                     }
                                                 ]}
-                                                onPress={() => setSelectedSpecialCategory(category)}
-                                            >
-                                                <Text
-                                                    style={[
-                                                        styles.categoryChipText,
-                                                        {
-                                                            color: selectedSpecialCategory === category
-                                                                ? theme.selectedChipTextColor
-                                                                : theme.chipTextColor
-                                                        }
-                                                    ]}
-                                                >
-                                                    {category}
-                                                </Text>
-                                            </TouchableOpacity>
-                                        ))}
-                                    </View>
-                                    <View style={styles.specialApplyContainer}>
-                                        <TouchableOpacity
-                                            style={styles.specialApplyButton}
-                                            onPress={() => applyCurated('newArrival')}
-                                        >
-                                            <Text style={styles.specialApplyText}>Apply</Text>
-                                        </TouchableOpacity>
+                                                value={minPrice === null ? '' : String(minPrice)}
+                                                onChangeText={(text) => {
+                                                    const cleaned = text.replace(/[^0-9]/g, '');
+                                                    setMinPrice(cleaned === '' ? null : Number(cleaned));
+                                                }}
+                                                keyboardType="numeric"
+                                                placeholder="Min"
+                                                placeholderTextColor={theme.chipTextColor}
+                                            />
+                                        </View>
+                                        <Text style={[styles.priceSeparator, { color: theme.textColor }]}>-</Text>
+                                        <View style={styles.priceInputWrapper}>
+                                            <Text style={[styles.priceInputLabel, { color: theme.labelColor }]}>Max</Text>
+                                            <TextInput
+                                                style={[
+                                                    styles.priceInput,
+                                                    {
+                                                        backgroundColor: theme.inputBackground,
+                                                        borderColor: theme.inputBorderColor,
+                                                        color: theme.textColor
+                                                    }
+                                                ]}
+                                                value={maxPrice === null ? '' : String(maxPrice)}
+                                                onChangeText={(text) => {
+                                                    const cleaned = text.replace(/[^0-9]/g, '');
+                                                    setMaxPrice(cleaned === '' ? null : Number(cleaned));
+                                                }}
+                                                keyboardType="numeric"
+                                                placeholder="Max"
+                                                placeholderTextColor={theme.chipTextColor}
+                                            />
+                                        </View>
                                     </View>
                                 </View>
-                            )}
+                                <View style={[styles.section, { borderBottomColor: theme.borderColor }]}>
+                                    <Text style={[styles.sectionTitle, { color: theme.sectionTitleColor }]}>Sort By</Text>
+                                    <TouchableOpacity
+                                        style={[
+                                            styles.sortOption,
+                                            localSort === 'name_asc' && { backgroundColor: theme.selectedOptionBackground }
+                                        ]}
+                                        onPress={() => setLocalSort('name_asc')}
+                                    >
+                                        <Icon
+                                            name={localSort === 'name_asc' ? 'check-circle' : 'circle'}
+                                            size={20}
+                                            color={localSort === 'name_asc' ? theme.checkIconActiveColor : theme.checkIconInactiveColor}
+                                        />
+                                        <Text style={[styles.sortOptionText, { color: theme.textColor }]}>Name (A - Z)</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={[
+                                            styles.sortOption,
+                                            localSort === 'name_desc' && { backgroundColor: theme.selectedOptionBackground }
+                                        ]}
+                                        onPress={() => setLocalSort('name_desc')}
+                                    >
+                                        <Icon
+                                            name={localSort === 'name_desc' ? 'check-circle' : 'circle'}
+                                            size={20}
+                                            color={localSort === 'name_desc' ? theme.checkIconActiveColor : theme.checkIconInactiveColor}
+                                        />
+                                        <Text style={[styles.sortOptionText, { color: theme.textColor }]}>Name (Z - A)</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={[
+                                            styles.sortOption,
+                                            localSort === 'price_asc' && { backgroundColor: theme.selectedOptionBackground }
+                                        ]}
+                                        onPress={() => setLocalSort('price_asc')}
+                                    >
+                                        <Icon
+                                            name={localSort === 'price_asc' ? 'check-circle' : 'circle'}
+                                            size={20}
+                                            color={localSort === 'price_asc' ? theme.checkIconActiveColor : theme.checkIconInactiveColor}
+                                        />
+                                        <Text style={[styles.sortOptionText, { color: theme.textColor }]}>Price: Low to High</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={[
+                                            styles.sortOption,
+                                            localSort === 'price_desc' && { backgroundColor: theme.selectedOptionBackground }
+                                        ]}
+                                        onPress={() => setLocalSort('price_desc')}
+                                    >
+                                        <Icon
+                                            name={localSort === 'price_desc' ? 'check-circle' : 'circle'}
+                                            size={20}
+                                            color={localSort === 'price_desc' ? theme.checkIconActiveColor : theme.checkIconInactiveColor}
+                                        />
+                                        <Text style={[styles.sortOptionText, { color: theme.textColor }]}>Price: High to Low</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </ScrollView>
 
-                            {!specialMode && (
-                                <ScrollView style={styles.scrollContent}>
-                                    <View style={[styles.section, { borderBottomColor: theme.borderColor }]}>
-                                        <Text style={[styles.sectionTitle, { color: theme.sectionTitleColor }]}>Categories</Text>
-                                        <View style={styles.categoriesContainer}>
-                                            {categories.map(category => (
-                                                <TouchableOpacity
-                                                    key={category}
-                                                    style={[
-                                                        styles.categoryChip,
-                                                        {
-                                                            backgroundColor: localCategory === category
-                                                                ? theme.selectedChipBackground
-                                                                : theme.chipBackground,
-                                                            borderColor: localCategory === category
-                                                                ? theme.selectedChipBorderColor
-                                                                : theme.chipBorderColor
-                                                        }
-                                                    ]}
-                                                    onPress={() => setLocalCategory(category)}
-                                                >
-                                                    <Text
-                                                        style={[
-                                                            styles.categoryChipText,
-                                                            {
-                                                                color: localCategory === category
-                                                                    ? theme.selectedChipTextColor
-                                                                    : theme.chipTextColor
-                                                            }
-                                                        ]}
-                                                    >
-                                                        {category}
-                                                    </Text>
-                                                </TouchableOpacity>
-                                            ))}
-                                        </View>
-                                    </View>
-                                    <View style={[styles.section, { borderBottomColor: theme.borderColor }]}>
-                                        <Text style={[styles.sectionTitle, { color: theme.sectionTitleColor }]}>Price Range</Text>
-                                        <View style={styles.priceRangesContainer}>
-                                            {priceRanges.map((range, index) => (
-                                                <TouchableOpacity
-                                                    key={index}
-                                                    style={[
-                                                        styles.priceRangeButton,
-                                                        {
-                                                            backgroundColor: minPrice === range.min && maxPriceValue === range.max
-                                                                ? theme.selectedChipBackground
-                                                                : theme.chipBackground,
-                                                            borderColor: minPrice === range.min && maxPriceValue === range.max
-                                                                ? theme.selectedChipBorderColor
-                                                                : theme.chipBorderColor
-                                                        }
-                                                    ]}
-                                                    onPress={() => setPriceRange(range.min, range.max)}
-                                                >
-                                                    <Text
-                                                        style={[
-                                                            styles.priceRangeText,
-                                                            {
-                                                                color: minPrice === range.min && maxPriceValue === range.max
-                                                                    ? theme.selectedChipTextColor
-                                                                    : theme.chipTextColor
-                                                            }
-                                                        ]}
-                                                    >
-                                                        {range.label}
-                                                    </Text>
-                                                </TouchableOpacity>
-                                            ))}
-                                        </View>
-                                        <Text style={[styles.customRangeLabel, { color: theme.labelColor }]}>Custom Price Range (EGP)</Text>
-                                        <View style={styles.customPriceInputContainer}>
-                                            <View style={styles.priceInputWrapper}>
-                                                <Text style={[styles.priceInputLabel, { color: theme.labelColor }]}>Min</Text>
-                                                <TextInput
-                                                    style={[
-                                                        styles.priceInput,
-                                                        {
-                                                            backgroundColor: theme.inputBackground,
-                                                            borderColor: theme.inputBorderColor,
-                                                            color: theme.textColor
-                                                        }
-                                                    ]}
-                                                    value={minPrice}
-                                                    onChangeText={setMinPrice}
-                                                    keyboardType="numeric"
-                                                    placeholder="Min"
-                                                    placeholderTextColor={theme.chipTextColor}
-                                                />
-                                            </View>
-                                            <Text style={[styles.priceSeparator, { color: theme.textColor }]}>-</Text>
-                                            <View style={styles.priceInputWrapper}>
-                                                <Text style={[styles.priceInputLabel, { color: theme.labelColor }]}>Max</Text>
-                                                <TextInput
-                                                    style={[
-                                                        styles.priceInput,
-                                                        {
-                                                            backgroundColor: theme.inputBackground,
-                                                            borderColor: theme.inputBorderColor,
-                                                            color: theme.textColor
-                                                        }
-                                                    ]}
-                                                    value={maxPriceValue}
-                                                    onChangeText={setMaxPriceValue}
-                                                    keyboardType="numeric"
-                                                    placeholder="Max"
-                                                    placeholderTextColor={theme.chipTextColor}
-                                                />
-                                            </View>
-                                        </View>
-                                    </View>
-                                    <View style={[styles.section, { borderBottomColor: theme.borderColor }]}>
-                                        <Text style={[styles.sectionTitle, { color: theme.sectionTitleColor }]}>Sort By</Text>
-                                        <TouchableOpacity
-                                            style={[
-                                                styles.sortOption,
-                                                localSortBy === 'name' && { backgroundColor: theme.selectedOptionBackground }
-                                            ]}
-                                            onPress={() => setLocalSortBy('name')}
-                                        >
-                                            <Icon
-                                                name={localSortBy === 'name' ? 'check-circle' : 'circle'}
-                                                size={20}
-                                                color={localSortBy === 'name' ? theme.checkIconActiveColor : theme.checkIconInactiveColor}
-                                            />
-                                            <Text style={[styles.sortOptionText, { color: theme.textColor }]}>Alphabetical (A-Z)</Text>
-                                        </TouchableOpacity>
-                                        <TouchableOpacity
-                                            style={[
-                                                styles.sortOption,
-                                                localSortBy === 'priceLow' && { backgroundColor: theme.selectedOptionBackground }
-                                            ]}
-                                            onPress={() => setLocalSortBy('priceLow')}
-                                        >
-                                            <Icon
-                                                name={localSortBy === 'priceLow' ? 'check-circle' : 'circle'}
-                                                size={20}
-                                                color={localSortBy === 'priceLow' ? theme.checkIconActiveColor : theme.checkIconInactiveColor}
-                                            />
-                                            <Text style={[styles.sortOptionText, { color: theme.textColor }]}>Price: Low to High</Text>
-                                        </TouchableOpacity>
-                                        <TouchableOpacity
-                                            style={[
-                                                styles.sortOption,
-                                                localSortBy === 'priceHigh' && { backgroundColor: theme.selectedOptionBackground }
-                                            ]}
-                                            onPress={() => setLocalSortBy('priceHigh')}
-                                        >
-                                            <Icon
-                                                name={localSortBy === 'priceHigh' ? 'check-circle' : 'circle'}
-                                                size={20}
-                                                color={localSortBy === 'priceHigh' ? theme.checkIconActiveColor : theme.checkIconInactiveColor}
-                                            />
-                                            <Text style={[styles.sortOptionText, { color: theme.textColor }]}>Price: High to Low</Text>
-                                        </TouchableOpacity>
-                                    </View>
-                                </ScrollView>
-                            )}
                             <View style={[styles.footer, { borderTopColor: theme.borderColor }]}>
                                 <TouchableOpacity
                                     style={[styles.resetButton, { borderColor: theme.buttonTextColor }]}
-                                    onPress={() => {
-                                        handleReset();
-                                        setSpecialMode(null);
-                                        setSelectedSpecialCategory(null);
-                                    }}
+                                    onPress={handleReset}
                                 >
                                     <Text style={[styles.resetButtonText, { color: theme.buttonTextColor }]}>Reset</Text>
                                 </TouchableOpacity>
-                                {!specialMode && (
-                                    <TouchableOpacity
-                                        style={[styles.applyButton, { backgroundColor: theme.applyButtonBackground }]}
-                                        onPress={handleApply}
-                                    >
-                                        <Text style={[styles.applyButtonText, { color: theme.applyButtonTextColor }]}>Apply</Text>
-                                    </TouchableOpacity>
-                                )}
+                                <TouchableOpacity
+                                    style={[styles.applyButton, { backgroundColor: theme.applyButtonBackground }]}
+                                    onPress={handleApply}
+                                >
+                                    <Text style={[styles.applyButtonText, { color: theme.applyButtonTextColor }]}>Apply</Text>
+                                </TouchableOpacity>
                             </View>
                         </View>
                     </TouchableWithoutFeedback>

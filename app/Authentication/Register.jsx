@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Dimensions, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import MiniAlert from '../../components/Component/MiniAlert';
@@ -18,26 +18,34 @@ const Register = () => {
   const [alertMsg, setAlertMsg] = useState(null);
   const [alertType, setAlertType] = useState('success');
   const [theme, setTheme] = useState(lightTheme);
+  const [themeVersion, setThemeVersion] = useState(0);
 
   const router = useRouter();
 
-  // Load theme preference from AsyncStorage
-  useEffect(() => {
-    const loadTheme = async () => {
+  const loadTheme = useCallback(() => {
+    let isActive = true;
+
+    (async () => {
       try {
         const themeMode = await AsyncStorage.getItem('ThemeMode');
-        if (themeMode === '2') {
-          setTheme(darkTheme);
-        } else {
-          setTheme(lightTheme);
+        const isDarkMode = themeMode === '2';
+        const nextTheme = isDarkMode ? { ...darkTheme } : { ...lightTheme };
+
+        if (isActive) {
+          setTheme(() => nextTheme);
+          setThemeVersion((value) => value + 1);
         }
       } catch (error) {
         console.error('Error loading theme:', error);
       }
+    })();
+
+    return () => {
+      isActive = false;
     };
-    
-    loadTheme();
   }, []);
+
+  useFocusEffect(loadTheme);
 
   const showAlert = (message, type = 'success') => {
     setAlertMsg(message);
@@ -121,8 +129,10 @@ const Register = () => {
     setLoading(false);
   }
 
+  const themedContainerStyle = useMemo(() => ({ backgroundColor: theme.backgroundColor }), [theme]);
+
   return (
-    <View style={[styles.fl, { backgroundColor: theme.backgroundColor }]}>
+    <View style={[styles.fl, themedContainerStyle]} key={themeVersion}>
       {alertMsg && (
         <MiniAlert
           message={alertMsg}

@@ -38,20 +38,26 @@ const Wishlist = () => {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [theme, setTheme] = useState(lightTheme);
+  const [themeVersion, setThemeVersion] = useState(0);
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const user = useUserStore((state) => state.user);
   const setUser = useUserStore((state) => state.setUser);
   const favoriteIds = Array.isArray(user?.Fav) ? (user?.Fav as string[]) : EMPTY_FAVORITES;
   const favoriteIdsKey = useMemo(() => JSON.stringify(favoriteIds), [favoriteIds]);
   const userId = user?.uid || user?.id || null;
 
-  const loadTheme = async () => {
+  const loadTheme = useCallback(async () => {
     try {
       const themeMode = await AsyncStorage.getItem('ThemeMode');
-      setTheme(themeMode === '2' ? darkTheme : lightTheme);
+      const isDark = themeMode === '2';
+      setIsDarkMode(isDark);
+      setTheme(isDark ? { ...darkTheme } : { ...lightTheme });
+      setThemeVersion((version) => version + 1);
     } catch (error) {
-      setTheme(lightTheme);
+      setIsDarkMode(false);
+      setTheme({ ...lightTheme });
     }
-  };
+  }, []);
 
   const formatPrice = (price?: number) => {
     const normalizedPrice = typeof price === 'number' ? price : 0;
@@ -226,7 +232,7 @@ const Wishlist = () => {
 
   useEffect(() => {
     loadTheme();
-  }, []);
+  }, [loadTheme]);
 
   // userId derived directly from global state; no AsyncStorage fallback needed
 
@@ -282,13 +288,17 @@ const Wishlist = () => {
   useFocusEffect(
     useCallback(() => {
       loadTheme();
-    }, [])
+    }, [loadTheme])
   );
 
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <LinearGradient colors={theme.colors.gradient  as [string, string, ...string[]]} style={theme.styles.container}>
+      <LinearGradient
+        key={`wishlist-theme-${themeVersion}`}
+        colors={theme.colors.gradient  as [string, string, ...string[]]}
+        style={theme.styles.container}
+      >
         {alertMsg && (
           <MiniAlert
             message={alertMsg}
@@ -307,6 +317,8 @@ const Wishlist = () => {
             `Are you sure you want to remove ${selectedProduct.name || 'this item'} from your favorites?` :
             "Are you sure you want to remove this item from your favorites?"}
           confirmButtonText="Remove"
+          theme={theme}
+          isDarkMode={isDarkMode}
         />
 
         <View style={theme.styles.header}>
