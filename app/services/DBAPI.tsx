@@ -7,6 +7,7 @@ import {
   UserCredential,
 } from "firebase/auth";
 import {
+  addDoc,
   collection,
   doc,
   DocumentData,
@@ -91,10 +92,27 @@ interface SignOutResponse {
   success: boolean;
   error?: string;
 }
- 
+
 interface OrdersResponse {
   success: boolean;
   orders: DocumentData[];
+  error?: string;
+}
+
+interface CreateOrderFromCheckoutPayload {
+  userId: string;
+  OrderedProducts: any[];
+  addressSnapshot: Record<string, any>;
+  paymentMethod: string;
+  paymentDetails?: any;
+  shippingFee: number;
+  subtotal: number;
+  total: number;
+}
+
+interface CreateOrderFromCheckoutResponse {
+  success: boolean;
+  orderId?: string;
   error?: string;
 }
 
@@ -292,11 +310,11 @@ export const fetchManageDocs = async (): Promise<ManageDocResponse> => {
   try {
     const snapshot = await getDocs(collection(db, "Manage"));
     if (snapshot.empty) {
-      return { success: true, unUpadtingManageDocs: null ,UpadtingManageDocs: null};
+      return { success: true, unUpadtingManageDocs: null, UpadtingManageDocs: null };
     }
     const firstDoc = snapshot.docs[0]?.data() || null;
     const secoundDoc = snapshot.docs[1]?.data() || null;
-    return { success: true, unUpadtingManageDocs: secoundDoc ,UpadtingManageDocs: firstDoc };
+    return { success: true, unUpadtingManageDocs: secoundDoc, UpadtingManageDocs: firstDoc };
   } catch (error: any) {
     return {
       success: false,
@@ -331,6 +349,37 @@ export const fetchUserOrders = async (userId: string): Promise<OrdersResponse> =
       success: false,
       orders: [],
       error: error?.message || "Failed to load user orders",
+    };
+  }
+};
+
+export const createOrderFromCheckout = async (
+  payload: CreateOrderFromCheckoutPayload
+): Promise<CreateOrderFromCheckoutResponse> => {
+  if (!payload?.userId) {
+    return { success: false, error: "Missing userId" };
+  }
+
+  try {
+    const orderRecord = {
+      userId: String(payload.userId),
+      OrderedProducts: Array.isArray(payload.OrderedProducts) ? payload.OrderedProducts : [],
+      addressSnapshot: payload.addressSnapshot || null,
+      paymentMethod: payload.paymentMethod || "CASH",
+      paymentDetails: payload.paymentDetails ?? null,
+      shippingFee: Number(payload.shippingFee) || 0,
+      subtotal: Number(payload.subtotal) || 0,
+      total: Number(payload.total) || 0,
+      createdAt: new Date(),
+      status: "pending",
+    };
+
+    const docRef = await addDoc(collection(db, "Orders"), orderRecord);
+    return { success: true, orderId: docRef.id };
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error?.message || "Failed to create order",
     };
   }
 };
@@ -402,44 +451,6 @@ export const signUp = async (
 };
 
 /**
- * Fetch ad banners from Manage collection
- */
-export const fetchAdBanners = async (): Promise<AdBannersResponse> => {
-  try {
-    const manageSnapshot = await getDocs(collection(db, "Manage"));
-    if (manageSnapshot.empty) {
-      return { success: true, banners: [] };
-    }
-
-    const manageData = manageSnapshot.docs[0]?.data() || {};
-    const rawAds = manageData.Ad || [];
-
-    const banners: AdBanner[] = Array.isArray(rawAds)
-      ? rawAds
-          .map((ad: any): AdBanner | null => {
-            if (!ad || !ad.img) return null;
-            return {
-              action: ad.action || 'offer',
-              img: ad.img,
-              content: ad.content || '',
-              id: ad.id || '',
-              SearchKey: ad.SearchKey || '',
-            };
-          })
-          .filter((ad): ad is AdBanner => ad !== null)
-      : [];
-
-    return { success: true, banners: banners as AdBanner[] };
-  } catch (error: any) {
-    return {
-      success: false,
-      banners: [],
-      error: error?.message || "Failed to load ad banners",
-    };
-  }
-};
-
-/**
  * Fetch a single product document by id
  */
 export const getProductById = async (
@@ -469,6 +480,7 @@ export const getProductById = async (
  */
 export const getProductsByIds = async (ids: string[]): Promise<{
   id: string;
+  description: string;
   name: string;
   price: number;
   discount: number;
@@ -489,6 +501,7 @@ export const getProductsByIds = async (ids: string[]): Promise<{
   const results: {
     id: string;
     name: string;
+    description: string;
     price: number;
     discount: number;
     image: string;
@@ -504,6 +517,7 @@ export const getProductsByIds = async (ids: string[]): Promise<{
       const data = docSnap.data() || {};
       results.push({
         id: docSnap.id,
+        description: data.description || "",
         name: data.name || "",
         price: typeof data.price === "number" ? data.price : Number(data.price) || 0,
         discount: typeof data.discount === "number" ? data.discount : Number(data.discount) || 0,
@@ -572,6 +586,10 @@ export interface FilteredProductsPageResult {
   }[];
   cursor: FilteredProductsPageCursor | null;
   hasMore: boolean;
+}
+
+export interface ProductSuggestionsResult {
+  items: { name: string }[];
 }
 
 export const getProductsPage = async (options: {
@@ -686,53 +704,152 @@ export const getFilteredProductsPage = async (options: {
   };
 };
 
+export const getProductNameSuggestions = async (options: {
+  searchText: string;
+  limit?: number;
+}) => {
+  const keyword = options.searchText.trim().toLowerCase();
+  const limitSize = options.limit ?? 8;
+
+  if (!keyword) {
+    return { items: [] };
+  }
+
+  /* =========================
+     1) Exact token search
+     ========================= */
+  const tokenQuery = query(
+    collection(db, "products"),
+    where("search_tokens", "array-contains", keyword),
+    limit(limitSize)
+  );
+
+  const tokenSnap = await getDocs(tokenQuery);
+
+  if (!tokenSnap.empty) {
+    return {
+      items: tokenSnap.docs.map(doc => ({
+        name: doc.data().name || "",
+      })),
+    };
+  }
+
+  /* =========================
+     2) Prefix fallback search
+     ========================= */
+  const prefixQuery = query(
+    collection(db, "products"),
+    orderBy("name_search"),
+    startAt(keyword),
+    endAt(keyword + "\uf8ff"),
+    limit(limitSize)
+  );
+
+  const prefixSnap = await getDocs(prefixQuery);
+
+  return {
+    items: prefixSnap.docs.map(doc => ({
+      name: doc.data().name || "",
+    })),
+  };
+};
+
 export const getSearchProductsPage = async (options: {
   limit?: number;
   cursor?: SearchProductsPageCursor;
   searchText: string;
 }): Promise<SearchProductsPageResult> => {
-  const pageSize = typeof options.limit === "number" && options.limit > 0 ? options.limit : 20;
-  const searchText = (options.searchText || "").trim();
 
-  const constraints: any[] = [orderBy("name", "asc")];
+  const pageSize =
+    typeof options.limit === "number" && options.limit > 0
+      ? options.limit
+      : 20;
 
-  if (searchText) {
-    constraints.push(startAt(searchText));
-    constraints.push(endAt(`${searchText}\uf8ff`));
+  const keyword = options.searchText.trim().toLowerCase();
+
+  if (!keyword) {
+    return { items: [], cursor: null, hasMore: false };
   }
+
+  /* =========================
+     1) Exact token search
+     ========================= */
+  const tokenConstraints: any[] = [
+    where("search_tokens", "array-contains", keyword),
+    limit(pageSize),
+  ];
 
   if (options.cursor) {
-    constraints.push(startAfter(options.cursor));
+    tokenConstraints.push(startAfter(options.cursor));
   }
 
-  constraints.push(limit(pageSize));
+  const tokenQuery = query(
+    collection(db, "products"),
+    ...tokenConstraints
+  );
 
-  const snapshot = await getDocs(query(collection(db, "products"), ...constraints));
-  const docs = snapshot.docs;
-  const items = docs.map((docSnap) => {
-    const data = docSnap.data() || {};
+  const tokenSnap = await getDocs(tokenQuery);
+
+  if (!tokenSnap.empty) {
+    const items = tokenSnap.docs.map(docSnap => {
+      const d = docSnap.data();
+      return {
+        id: docSnap.id,
+        name: d.name || "",
+        price: Number(d.price) || 0,
+        discount: Number(d.discount) || 0,
+        image: d.image || "",
+        category: d.category || "",
+        stockQuantity: Number(d.stockQuantity) || 100,
+        AvilableQuantityBerOeder: Number(d.AvilableQuantityBerOeder) || 0,
+      };
+    });
+
+    return {
+      items,
+      cursor: tokenSnap.docs[tokenSnap.docs.length - 1] || null,
+      hasMore: tokenSnap.docs.length === pageSize,
+    };
+  }
+
+  /* =========================
+     2) Prefix fallback search
+     ========================= */
+  const prefixConstraints: any[] = [
+    orderBy("name_search"),
+    startAt(keyword),
+    endAt(keyword + "\uf8ff"),
+    limit(pageSize),
+  ];
+
+  if (options.cursor) {
+    prefixConstraints.push(startAfter(options.cursor));
+  }
+
+  const prefixQuery = query(
+    collection(db, "products"),
+    ...prefixConstraints
+  );
+
+  const prefixSnap = await getDocs(prefixQuery);
+
+  const items = prefixSnap.docs.map(docSnap => {
+    const d = docSnap.data();
     return {
       id: docSnap.id,
-      name: data.name || "",
-      price: typeof data.price === "number" ? data.price : Number(data.price) || 0,
-      discount: typeof data.discount === "number" ? data.discount : Number(data.discount) || 0,
-      image: typeof data.image === "string" ? data.image : "",
-      category: data.category || "",
-      stockQuantity: typeof data.stockQuantity === "number" ? data.stockQuantity : Number(data.stockQuantity) || 100,
-      AvilableQuantityBerOeder: typeof data.AvilableQuantityBerOeder === "number"
-        ? data.AvilableQuantityBerOeder
-        : Number(data.AvilableQuantityBerOeder) || 0,
+      name: d.name || "",
+      price: Number(d.price) || 0,
+      discount: Number(d.discount) || 0,
+      image: d.image || "",
+      category: d.category || "",
+      stockQuantity: Number(d.stockQuantity) || 100,
+      AvilableQuantityBerOeder: Number(d.AvilableQuantityBerOeder) || 0,
     };
   });
 
-  const lastDoc = docs[docs.length - 1] || null;
-  const nextCursor = lastDoc || null;
-
   return {
     items,
-    cursor: nextCursor,
-    hasMore: docs.length === pageSize,
+    cursor: prefixSnap.docs[prefixSnap.docs.length - 1] || null,
+    hasMore: prefixSnap.docs.length === pageSize,
   };
 };
-
-// Favorites helpers were intentionally removed as they are not used by products page.

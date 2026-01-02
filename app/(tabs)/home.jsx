@@ -1,24 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, AppState, FlatList, Image, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import { ActivityIndicator, FlatList, Image, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import Icon from "react-native-vector-icons/Feather";
 import MiniAlert from '../../components/Component/MiniAlert';
 import ProductCard from '../../components/Component/ProductCard';
 import { useUserStore } from '../../store/userStore';
+import { darkTheme as cardDarkTheme, lightTheme as cardLightTheme } from '../../Theme/Component/ProductCardTheme';
 import { darkTheme, lightTheme } from '../../Theme/Tabs/HomeTheme';
-import {
-  getCart,
-  getCurrentUser,
-  getFavorites,
-  getManageConfig,
-  getPreferredCategories,
-  getProducts,
-  getUserProfile,
-  onAuthChange,
-  toggleFavorite as toggleFavoriteBackend,
-} from '../services/backend.ts';
-import { fetchAdBanners } from '../services/DBAPI.tsx';
+import { getFilteredProductsPage,fetchManageDocs, getProductNameSuggestions, getProductsByIds } from '../services/DBAPI.tsx';
 
 const Categories = [
   { id: 1, name: "Mobile" },
@@ -29,16 +19,31 @@ const Categories = [
   { id: 6, name: "Kids" },
 ];
 
+const buildMergedTheme = (isDarkMode) => {
+  const baseTheme = isDarkMode ? darkTheme : lightTheme;
+  const cardTheme = isDarkMode ? cardDarkTheme : cardLightTheme;
+  return { ...baseTheme, ...cardTheme };
+};
+
+const shuffleArray = (arr = []) => {
+  const copy = [...arr];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+};
+
+const HORIZONTAL_PADDING = 20;
+
 const HomePage = () => {
+  const userSelector = useCallback((state) => state.user, []);
+  const preferredCategoriesSelector = useCallback((state) => state.preferredCategories, []);
   const { categories } = useLocalSearchParams();
   const selectedCategories = categories ? JSON.parse(categories) : [];
-  const [storedCategories, setStoredCategories] = useState([]);
-  const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
-  // TODO replaced firebase call: "const currentUser = auth.currentUser;"
-  const [currentUser, setCurrentUser] = useState(() => getCurrentUser());
   const router = useRouter();
   const [alertMsg, setAlertMsg] = useState(null);
   const [alertType, setAlertType] = useState('success');
@@ -46,77 +51,38 @@ const HomePage = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchSuggestions, setSearchSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [allProducts, setAllProducts] = useState([]);
+  const limitedSuggestions = useMemo(() => searchSuggestions.slice(0, 4), [searchSuggestions]);
   const [preferredCategories, setPreferredCategories] = useState([]);
   const [recommendedProducts, setRecommendedProducts] = useState([]);
   const [topSellingIds, setTopSellingIds] = useState([]);
   const [newArrivalIds, setNewArrivalIds] = useState([]);
-  const [theme, setTheme] = useState(lightTheme);
-  const [appState, setAppState] = useState(AppState.currentState);
+  const [topSellingProducts, setTopSellingProducts] = useState([]);
+  const [newArrivalProducts, setNewArrivalProducts] = useState([]);
+  const [theme, setTheme] = useState(() => buildMergedTheme(false));
+  const [themeVersion, setThemeVersion] = useState(0);
   const [availableCategories, setAvailableCategories] = useState(Categories);
   const [adBanners, setAdBanners] = useState([]);
   const bannerRef = useRef(null);
   const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
   const dimensions = useWindowDimensions();
   const BANNER_WIDTH = dimensions.width - 40;
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [cartCount, setCartCount] = useState(0);
-  const [favoritesList, setFavoritesList] = useState([]);
+  const user = useUserStore(userSelector);
+  const storePreferredCategories = useUserStore(preferredCategoriesSelector);
 
-  const checkTheme = async () => {
+  const checkTheme = useCallback(async () => {
     try {
       const themeMode = await AsyncStorage.getItem("ThemeMode");
-      setTheme(themeMode === "2" ? darkTheme : lightTheme);
+      const isDarkMode = themeMode === "2";
+      setTheme(buildMergedTheme(isDarkMode));
+      setThemeVersion((value) => value + 1);
     } catch { }
-  };
-
-  useEffect(() => {
-    const subscription = AppState.addEventListener("change", nextAppState => {
-      if (appState.match(/inactive|background/) && nextAppState === "active") {
-        checkTheme();
-      }
-      setAppState(nextAppState);
-    });
-    return () => {
-      if (subscription && subscription.remove) {
-        subscription.remove();
-      }
-    };
-  }, [appState]);
-
-  useEffect(() => {
-    checkTheme();
-    const themeCheckInterval = setInterval(checkTheme, 1000);
-    return () => {
-      clearInterval(themeCheckInterval);
-    };
   }, []);
 
-  useEffect(() => {
-    const unsubscribe = onAuthChange((user) => setCurrentUser(user));
-    return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    const userId = currentUser?.uid;
-    if (userId) {
-      // TODO replaced firebase call: "const unsubscribe = listenToUserFavorites(userId, (favoritesArray) => {"
-      const maybeUnsubscribe = getFavorites(userId, {
-        subscribe: true,
-        onUpdate: (favoritesArray) => {
-          setFavoritesList(favoritesArray);
-        },
-      });
-
-      return () => {
-        if (typeof maybeUnsubscribe === 'function') {
-          maybeUnsubscribe();
-        }
-      };
-    } else {
-      setFavoritesList([]);
-    }
-  }, [currentUser]); // Dependency is on currentUser
+  useFocusEffect(
+    useCallback(() => {
+      checkTheme();
+    }, [checkTheme])
+  );
 
   const showAlert = (message, type = 'success') => {
     setLoad(true);
@@ -128,76 +94,81 @@ const HomePage = () => {
     }, 3000);
   };
 
-  const handleCartPress = async () => {
-    try {
-      const user = useUserStore.getState().user;
-      // TODO replaced firebase call: "const isLoggedIn = !!auth.currentUser || (!!userJson && userJson !== \"undefined\");"
-      const isLoggedIn = !!getCurrentUser() || !!user;
-      if (!isLoggedIn) {
-        showAlert("Please login to access your cart", 'error');
-        return;
-      }
-      // router.push("../Cart/cart");
-      router.push('../Cart/carts');
-    } catch {
+  const handleCartPress = () => {
+    if (!user) {
       showAlert("Please login to access your cart", 'error');
-    }
-  };
-
-  const storeCategories = async () => {
-    try {
-      if (selectedCategories.length > 0) {
-        const existing = await AsyncStorage.getItem('categories');
-        if (!existing) {
-          await AsyncStorage.setItem('categories', JSON.stringify(selectedCategories));
-        }
-      }
-    } catch { }
-  };
-
-  const getStoredCategories = async () => {
-    try {
-      const value = await AsyncStorage.getItem('categories');
-      if (value) {
-        const parsed = JSON.parse(value);
-        setStoredCategories(parsed);
-      }
-    } catch { }
-  };
-
-  const fetchPreferredCategories = useCallback(async () => {
-    try {
-      // TODO replaced firebase call: "const cats = await loadCachedPreferredCategories();"
-      const cats = await getPreferredCategories();
-      setPreferredCategories(cats);
-    } catch {
-      setPreferredCategories([]);
-    }
-  }, []);
-
-  const fetchRecommendedProducts = useCallback(async () => {
-    // TODO replaced firebase call: "const categories = await loadCachedPreferredCategories();"
-    const categories = await getPreferredCategories();
-    if (categories.length === 0) {
-      setRecommendedProducts([]);
       return;
     }
-    setPreferredCategories(categories);
+    router.push('../Cart/cart');
+  };
+
+  const preferredCategoriesFromStore = useMemo(() => {
+    if (Array.isArray(storePreferredCategories)) return storePreferredCategories;
+    if (Array.isArray(user?.preferredCategories)) return user.preferredCategories;
+    return [];
+  }, [storePreferredCategories, user?.preferredCategories]);
+
+  const fetchRecommendedProducts = useCallback(async () => {
     try {
-      // TODO replaced firebase call: "const response = await getCollection(\"products\");"
-      const productList = await getProducts();
-      const filtered = productList.filter(product =>
-        categories.includes(product.category)
+      const preferred = preferredCategoriesFromStore || [];
+      setPreferredCategories(preferred);
+
+      if (preferred.length === 0) {
+        setRecommendedProducts([]);
+        return;
+      }
+
+      const categoryFetches = preferred.map((cat) =>
+        getFilteredProductsPage({
+          limit: 8,
+          category: cat,
+        }).catch(() => ({ items: [] }))
       );
-      setRecommendedProducts(filtered.sort(() => Math.random() - 0.5).slice(0, 15));
-    } catch { }
+
+      const results = await Promise.all(categoryFetches);
+      const merged = results.flatMap((res) => res?.items || []).filter(Boolean);
+      const seen = new Set();
+      const deduped = merged.filter((item) => {
+        if (!item?.id || seen.has(item.id)) return false;
+        seen.add(item.id);
+        return true;
+      });
+      const shuffled = shuffleArray(deduped);
+      setRecommendedProducts(shuffled.slice(0, 17));
+    } catch {
+      setRecommendedProducts([]);
+    }
+  }, [preferredCategoriesFromStore]);
+
+  const loadCategoriesFromStorage = useCallback(async () => {
+    try {
+      const manageData = await AsyncStorage.getItem('unUpadtingManageDocs');
+      if (manageData) {
+        const parsed = JSON.parse(manageData);
+        const categoriesArray = parsed?.AvilableCategory || [];
+        const formatted = categoriesArray.map((item, index) => {
+          if (typeof item === 'string' && item.includes(',')) {
+            const [name, image] = item.split(',');
+            return { id: index.toString(), name: name.trim(), image: (image || '').trim() };
+          }
+          return item;
+        });
+        setAvailableCategories(formatted.length > 0 ? formatted : Categories);
+      } else {
+        setAvailableCategories(Categories);
+      }
+    } catch {
+      setAvailableCategories(Categories);
+    }
   }, []);
 
   const fetchAdBannersData = useCallback(async () => {
     try {
-      const response = await fetchAdBanners();
-      if (response.success && response.banners.length > 0) {
-        setAdBanners(response.banners);
+      const manageData = await AsyncStorage.getItem('UpadtingManageDocs');
+      if (manageData) {
+        const parsed = JSON.parse(manageData);
+        const ads = Array.isArray(parsed?.Ad) ? parsed.Ad : [];
+        setAdBanners(ads);
       } else {
         setAdBanners([]);
       }
@@ -206,218 +177,162 @@ const HomePage = () => {
     }
   }, []);
 
-  const updateUserDataFromFirebase = useCallback(async () => {
-    if (!currentUser) return;
+  const loadCuratedSection = useCallback(async (type) => {
     try {
-      // TODO replaced firebase call: "const userData = await getUserData(currentUser.uid);"
-      const userData = await getUserProfile(currentUser.uid);
-      if (userData) {
-        useUserStore.getState().setUser(userData);
-        // After updating user data from firebase, reload preferred categories from cache
-        await fetchPreferredCategories();
+      const manageData = await AsyncStorage.getItem('UpadtingManageDocs');
+      const parsed = manageData ? JSON.parse(manageData) : {};
+      const ids = type === 'TopSelling' ? parsed?.TopSelling : parsed?.NewArrival;
+      if (!Array.isArray(ids) || ids.length === 0) {
+        if (type === 'TopSelling') {
+          setTopSellingIds([]);
+          setTopSellingProducts([]);
+        } else {
+          setNewArrivalIds([]);
+          setNewArrivalProducts([]);
+        }
+        return;
       }
-    } catch { }
-  }, [currentUser, fetchPreferredCategories]);
 
-  useEffect(() => {
-    const init = async () => {
-      await storeCategories();
-      await getStoredCategories();
-    };
-    init();
+      const shuffledIds = shuffleArray(ids).slice(0, 9).map(String);
+      const productsById = await getProductsByIds(shuffledIds);
+
+      if (type === 'TopSelling') {
+        setTopSellingIds(shuffledIds);
+        setTopSellingProducts(productsById.slice(0, 9));
+      } else {
+        setNewArrivalIds(shuffledIds);
+        setNewArrivalProducts(productsById.slice(0, 9));
+      }
+    } catch {
+      if (type === 'TopSelling') {
+        setTopSellingIds([]);
+        setTopSellingProducts([]);
+      } else {
+        setNewArrivalIds([]);
+        setNewArrivalProducts([]);
+      }
+    }
   }, []);
 
   useEffect(() => {
     fetchRecommendedProducts();
   }, [fetchRecommendedProducts]);
 
-  const fetchProducts = useCallback(async () => {
-    try {
-      setLoading(true);
-      // TODO replaced firebase call: "const response = await getCollection(\"products\", conditions);"
-      const productList = await getProducts({
-        orderBy: { field: 'createdAt', direction: 'desc' },
-        limit: 20,
-      });
-      setProducts(productList);
-      setLoading(false);
-      setRefreshing(false);
-      return true;
-    } catch {
-      setError("Something went wrong. Please try again later.");
-      setLoading(false);
-      setRefreshing(false);
-      return false;
-    }
-  }, []);
-
-  const fetchAllProducts = useCallback(async () => {
-    try {
-      // TODO replaced firebase call: "const response = await getCollection(\"products\");"
-      const productList = await getProducts();
-      setAllProducts(productList);
-    } catch { }
-  }, []);
-
-  const loadCartCount = useCallback(async () => {
-    try {
-      // TODO replaced firebase call: "if (!auth.currentUser) {"
-      const user = getCurrentUser();
-      if (!user) {
-        setCartCount(0);
-        return;
-      }
-      // TODO replaced firebase call: "const items = await getUserCart(auth.currentUser.uid);"
-      const cartSnapshot = await getCart(user.uid);
-      const items = cartSnapshot.items || [];
-      const total = items.reduce((s, it) => s + (Number(it.quantity) || 1), 0);
-      setCartCount(total);
-    } catch {
-      setCartCount(0);
-    }
-  }, []);
-
-  const checkLoginStatus = useCallback(async () => {
-    try {
-      const user = useUserStore.getState().user;
-      // TODO replaced firebase call: "const logged = !!auth.currentUser || (userJson && userJson !== \"undefined\");"
-      const logged = !!getCurrentUser() || !!user;
-      setIsLoggedIn(!!logged);
-      if (logged) loadCartCount();
-      else setCartCount(0);
-    } catch {
-      setIsLoggedIn(false);
-      setCartCount(0);
-    }
-  }, [loadCartCount]);
+  const cartCount = useMemo(() => {
+    const items = Array.isArray(user?.Cart) ? user.Cart : [];
+    return items.length;
+  }, [user?.Cart]);
 
   useEffect(() => {
-    let unsubscribe;
     const start = async () => {
-      await fetchProducts();
-      updateUserDataFromFirebase();
-      fetchAdBannersData();
-      // TODO replaced firebase call: "const { success, data: cats } = await syncAvailableCategories();"
-      const manageConfig = await getManageConfig();
-      if (manageConfig.success && manageConfig.categories.length > 0) {
-        setAvailableCategories(manageConfig.categories);
-      } else {
-        setAvailableCategories(Categories);
+      setLoading(true);
+      try {
+        fetchAdBannersData();
+        loadCategoriesFromStorage();
+        await loadCuratedSection('TopSelling');
+        await loadCuratedSection('NewArrival');
+      } finally {
+        setLoading(false);
       }
     };
     start();
-    return () => {
-      if (typeof unsubscribe === 'function') {
-        unsubscribe();
-      }
-    };
-  }, [fetchProducts, updateUserDataFromFirebase, fetchAdBannersData]);
+  }, [fetchAdBannersData, loadCategoriesFromStorage, loadCuratedSection]);
 
   useFocusEffect(
     useCallback(() => {
-      const loadCats = async () => {
-        // TODO replaced firebase call: "const { data: cats } = await loadCachedCategories();"
-        const cachedConfig = await getManageConfig({ source: 'cache' });
-        if (cachedConfig.categories && cachedConfig.categories.length > 0) {
-          setAvailableCategories(cachedConfig.categories);
-        }
-      };
-      loadCats();
-      checkLoginStatus();
-    }, [checkLoginStatus])
+      loadCategoriesFromStorage();
+    }, [loadCategoriesFromStorage])
   );
+  const refreshManageDocs = async () => {
+  const manageResponse = await fetchManageDocs();
 
-  useEffect(() => {
-    checkLoginStatus();
-  }, [checkLoginStatus, currentUser]);
+  await AsyncStorage.setItem(
+    'UpadtingManageDocs',
+    JSON.stringify(manageResponse.UpadtingManageDocs)
+  );
+};
+
 
   const onRefresh = useCallback(
     async () => {
       try {
         setRefreshing(true);
+        setLoading(true);
+        setSearchSuggestions([]);
+        setShowSuggestions(false);
+        await refreshManageDocs();
         await Promise.all([
-          fetchProducts(),
           fetchRecommendedProducts(),
-          updateUserDataFromFirebase(),
-          fetchAllProducts(),
-          checkLoginStatus(),
           fetchAdBannersData(),
-          // TODO replaced firebase call: "syncAvailableCategories().then(({ success, data: cats }) => {"
-          getManageConfig().then((manageConfig) => {
-            if (manageConfig.success && manageConfig.categories.length > 0) {
-              setAvailableCategories(manageConfig.categories);
-            } else {
-              setAvailableCategories(Categories);
-            }
-          })
+          loadCategoriesFromStorage(),
+          loadCuratedSection('TopSelling'),
+          loadCuratedSection('NewArrival'),
+          Promise.resolve()
         ].map(p => p.catch ? p : Promise.resolve()));
 
-        await loadCartCount();
       } finally {
+        setLoading(false);
         setRefreshing(false);
       }
     },
-    [fetchProducts, fetchRecommendedProducts, updateUserDataFromFirebase, fetchAllProducts, checkLoginStatus, loadCartCount, fetchAdBannersData]
+    [fetchRecommendedProducts, fetchAdBannersData, loadCategoriesFromStorage, loadCuratedSection]
   );
 
+  const favoritesList = useMemo(() => {
+    const favs = user?.Fav;
+    return Array.isArray(favs) ? favs.map((f) => String(f)) : [];
+  }, [user?.Fav]);
+
+  const topSellingList = useMemo(() => {
+    if (topSellingProducts.length > 0) return topSellingProducts;
+    return [];
+  }, [topSellingProducts]);
+
+  const newArrivalList = useMemo(() => {
+    if (newArrivalProducts.length > 0) return newArrivalProducts;
+    return [];
+  }, [newArrivalProducts]);
+
   useEffect(() => {
-    fetchAllProducts();
-    (async () => {
-      // TODO replaced firebase call: "const { success, data: cats } = await syncAvailableCategories();"
-      const manageConfig = await getManageConfig();
-      if (manageConfig.success && manageConfig.categories.length > 0) {
-        setAvailableCategories(manageConfig.categories);
-      } else {
-        setAvailableCategories(Categories);
+    let isActive = true;
+    const fetchSuggestions = async () => {
+      const normalized = searchQuery.trim().toLowerCase();
+      if (normalized.length < 1) {
+        if (isActive) {
+          setSearchSuggestions([]);
+          setShowSuggestions(false);
+        }
+        return;
       }
-    })();
-  }, [fetchAllProducts]);
 
-  const topSellingProducts = useMemo(() => {
-    if (topSellingIds && topSellingIds.length > 0 && allProducts.length > 0) {
-      return topSellingIds
-        .map(id => allProducts.find(p => p.id == id))
-        .filter(Boolean);
-    }
-    return [...products].sort((a, b) => (b.sold || 0) - (a.sold || 0)).slice(0, 15);
-  }, [topSellingIds, allProducts, products]);
+      try {
+        const result = await getProductNameSuggestions({
+          limit: 8,
+          searchText: normalized,
+        });
 
-  const newProducts = useMemo(() => {
-    if (newArrivalIds && newArrivalIds.length > 0 && allProducts.length > 0) {
-      return newArrivalIds
-        .map(id => allProducts.find(p => p.id == id))
-        .filter(Boolean);
-    }
-    return products.slice(-15);
-  }, [newArrivalIds, allProducts, products]);
+        if (isActive) {
+          const suggestions = (result.items || []).map((item) => ({ name: item.name }));
+          setSearchSuggestions(suggestions);
+          setShowSuggestions(suggestions.length > 0);
+        }
+      } catch {
+        if (isActive) {
+          setSearchSuggestions([]);
+          setShowSuggestions(false);
+        }
+      }
+    };
 
-  const getSearchSuggestions = useCallback((query) => {
-    if (!query || query.length < 1) {
-      return [];
-    }
-    const lowercaseQuery = query.toLowerCase().trim();
-    return allProducts
-      .filter(product => product.name && product.name.toLowerCase().includes(lowercaseQuery))
-      .map(product => ({
-        id: product.id,
-        name: product.name,
-        image: product.image
-      }))
-      .slice(0, 8);
-  }, [allProducts]);
-
-  useEffect(() => {
-    if (allProducts.length > 0 && searchQuery.length > 0) {
-      setSearchSuggestions(getSearchSuggestions(searchQuery));
-      setShowSuggestions(true);
-    } else {
-      setSearchSuggestions([]);
-      setShowSuggestions(false);
-    }
-  }, [searchQuery, getSearchSuggestions, allProducts]);
+    fetchSuggestions();
+    return () => {
+      isActive = false;
+    };
+  }, [searchQuery]);
 
   const handleSelectSuggestion = (suggestion) => {
     setSearchQuery(suggestion.name);
+    setSearchSuggestions([]);
     setShowSuggestions(false);
     router.push({
       pathname: "/(tabs)/products",
@@ -507,19 +422,6 @@ const HomePage = () => {
     }
   }, [adBanners, BANNER_WIDTH]);
 
-  const handleFavoriteToggle = async (productId) => {
-    try {
-      // TODO replaced firebase call: "if (!auth.currentUser) {"
-      const user = getCurrentUser();
-      if (!user) {
-        showAlert("Please login to add items to your favorites", 'error');
-        return;
-      }
-      // TODO replaced firebase call: "await toggleFavorite(auth.currentUser.uid, productId);"
-      await toggleFavoriteBackend(user.uid, productId);
-    } catch { }
-  };
-
   if (error) {
     return (
       <View style={[styles.errorContainer, { backgroundColor: theme.background }]}>
@@ -527,7 +429,7 @@ const HomePage = () => {
         <Text style={[styles.errorText, { color: theme.errorText }]}>{error}</Text>
         <TouchableOpacity
           style={[styles.retryButton, { backgroundColor: theme.retryButtonBackground }]}
-          onPress={fetchProducts}
+          onPress={onRefresh}
         >
           <Text style={[styles.retryButtonText, { color: theme.retryButtonText }]}>Try Again</Text>
         </TouchableOpacity>
@@ -538,27 +440,27 @@ const HomePage = () => {
   const renderProductCard = ({ item }) => (
     <ProductCard
       item={item}
-      currentUser={currentUser}
       onShowAlert={showAlert}
       theme={theme}
       isFavorite={favoritesList.includes(item.id)}
-      onFavoriteToggle={handleFavoriteToggle}
     />
   );
 
   return (
     <>
       <Stack screenOptions={{ headerShown: false }} />
-      <ScrollView
-        style={[styles.container, { backgroundColor: theme.background }]}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-        keyboardShouldPersistTaps="handled"
-      >
+      <View style={styles.pageWrapper}>
+        <ScrollView
+          style={[styles.container, { backgroundColor: theme.background }]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+          nestedScrollEnabled
+          keyboardShouldPersistTaps="handled"
+        >
         <View style={styles.header}>
-          {!isLoggedIn ? (
+          {!user ? (
             <TouchableOpacity onPress={() => router.push("/Authentication/Login")}>
               <View
                 style={[
@@ -601,12 +503,17 @@ const HomePage = () => {
               value={searchQuery}
               onChangeText={setSearchQuery}
               returnKeyType="search"
+              onBlur={() => {
+                setSearchSuggestions([]);
+                setShowSuggestions(false);
+              }}
               onSubmitEditing={() => {
                 if (searchQuery.trim()) {
                   router.push({
                     pathname: "/(tabs)/products",
                     params: { searchTerm: searchQuery.trim() }
                   });
+                  setSearchSuggestions([]);
                   setShowSuggestions(false);
                 }
               }}
@@ -617,31 +524,26 @@ const HomePage = () => {
               </TouchableOpacity>
             )}
           </View>
-          {showSuggestions && searchQuery.length > 0 && (
-            <View style={[styles.suggestionsContainer, {
-              backgroundColor: theme.suggestionsBackground,
-              borderColor: theme.suggestionsBorder,
-              shadowColor: theme.searchBarShadow
-            }]}>
-              {searchSuggestions.length > 0 ? (
-                searchSuggestions.map((suggestion, index) => (
-                  <TouchableOpacity
-                    key={index}
-                    style={[styles.suggestionItem, { borderBottomColor: theme.suggestionItemBorder }]}
-                    onPress={() => handleSelectSuggestion(suggestion)}
-                  >
-                    <Icon name="search" size={16} color={theme.searchIcon} style={styles.suggestionIcon} />
-                    <Text style={[styles.suggestionText, { color: theme.suggestionText }]} numberOfLines={1}>
-                      {suggestion.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))
-              ) : (
-                <View style={styles.suggestionItem}>
-                  <Icon name="info" size={16} color={theme.searchIcon} style={styles.suggestionIcon} />
-                  <Text style={[styles.noResultsText, { color: theme.noResultsText }]}>No matching products</Text>
-                </View>
-              )}
+          {showSuggestions && searchQuery.trim().length >= 1 && limitedSuggestions.length > 0 && (
+            <View
+              style={[styles.suggestionsDropdown, {
+                backgroundColor: theme.suggestionsBackground,
+                borderColor: theme.suggestionsBorder,
+                shadowColor: theme.searchBarShadow,
+              }]}
+            >
+              {limitedSuggestions.map((item, index) => (
+                <TouchableOpacity
+                  key={`${item.name}-${index}`}
+                  style={[styles.suggestionItem, { borderBottomColor: theme.suggestionItemBorder }]}
+                  onPress={() => handleSelectSuggestion(item)}
+                >
+                  <Icon name="search" size={16} color={theme.searchIcon} style={styles.suggestionIcon} />
+                  <Text style={[styles.suggestionText, { color: theme.suggestionText }]} numberOfLines={1}>
+                    {item.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
           )}
         </View>
@@ -649,6 +551,7 @@ const HomePage = () => {
         <FlatList
           data={availableCategories}
           keyExtractor={(item) => (item.id ? String(item.id) : String(item.name))}
+          extraData={themeVersion}
           renderItem={({ item }) => {
             const display = (typeof item === 'string') ? { name: item, image: '' } : item;
             const hasImage = Boolean(display.image && String(display.image).trim().length > 0);
@@ -750,18 +653,12 @@ const HomePage = () => {
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>Top Selling</Text>
           <TouchableOpacity onPress={() => {
-            const idsForNav = (topSellingIds && topSellingIds.length > 0)
-              ? topSellingIds
-              : (topSellingProducts || []).map(p => p.id).filter(Boolean);
-            if (idsForNav && idsForNav.length > 0) {
-              router.push({
-                pathname: "/(tabs)/products",
-                params: {
-                  sectionTitle: "Top Selling",
-                  sectionIds: encodeURIComponent(JSON.stringify(idsForNav))
-                }
-              });
-            }
+            router.push({
+              pathname: "/(tabs)/products",
+              params: {
+                type: "topSelling"
+              }
+            });
           }}>
             <Text style={[styles.seeAllText, { color: theme.accentColor }]}>Show More</Text>
           </TouchableOpacity>
@@ -772,8 +669,9 @@ const HomePage = () => {
           </View>
         ) : (
           <FlatList
-            data={topSellingProducts}
+            data={topSellingList}
             keyExtractor={(item) => item.id.toString()}
+            extraData={themeVersion}
             renderItem={renderProductCard}
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -783,18 +681,12 @@ const HomePage = () => {
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>New Arrivals</Text>
           <TouchableOpacity onPress={() => {
-            const idsForNav = (newArrivalIds && newArrivalIds.length > 0)
-              ? newArrivalIds
-              : (newProducts || []).map(p => p.id).filter(Boolean);
-            if (idsForNav && idsForNav.length > 0) {
-              router.push({
-                pathname: "/(tabs)/products",
-                params: {
-                  sectionTitle: "New Arrivals",
-                  sectionIds: encodeURIComponent(JSON.stringify(idsForNav))
-                }
-              });
-            }
+            router.push({
+              pathname: "/(tabs)/products",
+              params: {
+                type: "newArrival"
+              }
+            });
           }}>
             <Text style={[styles.seeAllText, { color: theme.accentColor }]}>Show More</Text>
           </TouchableOpacity>
@@ -805,15 +697,16 @@ const HomePage = () => {
           </View>
         ) : (
           <FlatList
-            data={newProducts}
+            data={newArrivalList}
             keyExtractor={(item) => item.id.toString()}
+            extraData={themeVersion}
             renderItem={renderProductCard}
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.newIn}
           />
         )}
-        {preferredCategories.length > 0 && recommendedProducts.length > 0 && (
+        {recommendedProducts.length > 0 && (
           <>
             <View style={styles.sectionHeader}>
               <Text style={[styles.sectionTitle, { color: theme.text }]}>Recommended For You</Text>
@@ -826,6 +719,7 @@ const HomePage = () => {
               <FlatList
                 data={recommendedProducts}
                 keyExtractor={(item) => item.id}
+                extraData={themeVersion}
                 renderItem={renderProductCard}
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -834,7 +728,8 @@ const HomePage = () => {
             )}
           </>
         )}
-      </ScrollView>
+        </ScrollView>
+      </View>
       {alertMsg && (
         <MiniAlert
           message={alertMsg}
@@ -850,7 +745,7 @@ const HomePage = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingHorizontal: 20,
+    paddingHorizontal: HORIZONTAL_PADDING,
     paddingTop: 30,
   },
   header: {
@@ -862,6 +757,7 @@ const styles = StyleSheet.create({
     position: 'relative',
     zIndex: 10,
     marginBottom: 20,
+    overflow: 'visible',
   },
   searchBar: {
     flexDirection: "row",
@@ -884,20 +780,20 @@ const styles = StyleSheet.create({
   clearButton: {
     padding: 5,
   },
-  suggestionsContainer: {
+  suggestionsDropdown: {
     position: 'absolute',
-    top: 55,
+    top: '100%',
     left: 0,
     right: 0,
-    borderRadius: 10,
-    elevation: 4,
+    marginTop: 6,
+    borderRadius: 12,
+    elevation: 6,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 5,
-    zIndex: 20,
-    overflow: 'hidden',
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
     borderWidth: 1,
-    maxHeight: 300,
+    overflow: 'hidden',
+    zIndex: 20,
   },
   suggestionItem: {
     flexDirection: 'row',
@@ -1055,6 +951,11 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 10,
     fontWeight: '700'
+  },
+  pageWrapper: {
+    flex: 1,
+    position: 'relative',
+    overflow: 'visible',
   },
 });
 

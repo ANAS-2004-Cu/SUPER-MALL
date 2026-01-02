@@ -9,10 +9,10 @@ import FilterModal from '../../Modal/FilterModal';
 import { darkTheme as cardDarkTheme, lightTheme as cardLightTheme } from '../../Theme/Component/ProductCardTheme';
 import { darkTheme, lightTheme } from '../../Theme/Tabs/ProductsTheme';
 import {
-  getFilteredProductsPage,
-  getProductsByIds,
-  getProductsPage,
-  getSearchProductsPage,
+    getFilteredProductsPage,
+    getProductsByIds,
+    getProductsPage,
+    getSearchProductsPage,
 } from '../services/DBAPI.tsx';
 
 const ProductList = () => {
@@ -38,6 +38,7 @@ const ProductList = () => {
   const [browseCursor, setBrowseCursor] = useState(null);
   const [filteredCursor, setFilteredCursor] = useState(null);
   const [searchCursor, setSearchCursor] = useState(null);
+  const [curatedCursor, setCuratedCursor] = useState(0);
   const [showScrollUp, setShowScrollUp] = useState(false);
   const [scrollOffset, setScrollOffset] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
@@ -50,7 +51,7 @@ const ProductList = () => {
   };
 
   const isSearchMode = Boolean(intent.search && String(intent.search).trim().length > 0);
-  const isCuratedMode = !isSearchMode && (intent.type === 'TopSelling' || intent.type === 'NewArrival');
+  const isCuratedMode = !isSearchMode && (intent.type === 'TopSelling' || intent.type === 'NewArrival' || intent.type === 'topSelling' || intent.type === 'newArrival');
   const activeCategory = intent.category && intent.category !== 'All' ? intent.category : null;
   const priceFilterApplied = intent.priceRange?.min !== null || intent.priceRange?.max !== null;
   const serverSideFiltersActive = !isSearchMode && !isCuratedMode && (Boolean(activeCategory) || priceFilterApplied);
@@ -107,7 +108,7 @@ const ProductList = () => {
       filtered = filtered.filter(item => item?.name?.toLowerCase().includes(needle));
     }
 
-    if (activeCategory) {
+    if (activeCategory && !isCuratedMode) {
       filtered = filtered.filter(item => item?.category === activeCategory);
     }
 
@@ -125,24 +126,33 @@ const ProductList = () => {
     else{return sortLocal(filtered);}
   };
 
-  const fetchCuratedProducts = async () => {
+  const fetchCuratedProducts = async (cursorArg = 0) => {
     try {
       const stored = await AsyncStorage.getItem('UpadtingManageDocs');
       const parsed = stored ? JSON.parse(stored) : null;
-      const ids = intent.type === 'TopSelling' ? parsed?.TopSelling : parsed?.NewArrival;
+      const ids = (intent.type === 'TopSelling' || intent.type === 'topSelling') ? parsed?.TopSelling : parsed?.NewArrival;
       if (!Array.isArray(ids) || ids.length === 0) {
         setProducts([]);
         setHasMore(false);
+        setCuratedCursor(null);
         return;
       }
 
-      const results = await getProductsByIds(ids.map(String));
-      setProducts(results.filter(Boolean));
-      setHasMore(false);
+      const start = typeof cursorArg === 'number' && cursorArg >= 0 ? cursorArg : 0;
+      const idSlice = ids.map(String).slice(start, start + pageSize);
+      const results = await getProductsByIds(idSlice);
+      const filtered = results.filter(Boolean);
+      setProducts((prev) => (start === 0 ? filtered : [...prev, ...filtered]));
+
+      const nextCursor = start + pageSize;
+      const hasNext = nextCursor < ids.length;
+      setCuratedCursor(hasNext ? nextCursor : null);
+      setHasMore(hasNext);
     } catch (error) {
       console.error('Failed to load curated products:', error);
       setProducts([]);
       setHasMore(false);
+      setCuratedCursor(null);
     }
   };
 
@@ -199,11 +209,13 @@ const ProductList = () => {
         setBrowseCursor(null);
         setFilteredCursor(null);
         setSearchCursor(null);
+        setCuratedCursor(0);
         setHasMore(true);
       }
 
       if (isCuratedMode) {
-        await fetchCuratedProducts();
+        const cursorToUse = reset ? 0 : (curatedCursor || 0);
+        await fetchCuratedProducts(cursorToUse);
         return;
       }
 
@@ -296,6 +308,12 @@ const ProductList = () => {
   }, [params.category]);
 
   useEffect(() => {
+    if (params.type) {
+      setIntent(prev => ({ ...prev, type: String(params.type) }));
+    }
+  }, [params.type]);
+
+  useEffect(() => {
     setProducts([]);
     setHasMore(true);
     setBrowseCursor(null);
@@ -347,7 +365,7 @@ const ProductList = () => {
   );
 
   const handleLoadMore = () => {
-    if (!isCuratedMode && hasMore && !isRefreshing && !isLoading) {
+    if (hasMore && !isRefreshing && !isLoading) {
       loadProducts(false);
     }
   };
@@ -382,7 +400,7 @@ const ProductList = () => {
   const displayTitle = isSearchMode
     ? `Search (${filteredProducts.length})`
     : isCuratedMode
-      ? `${intent.type === 'TopSelling' ? 'Top Selling' : 'New Arrival'} (${filteredProducts.length})`
+      ? `${(intent.type === 'TopSelling' || intent.type === 'topSelling') ? 'Top Selling' : 'New Arrival'} (${filteredProducts.length})`
       : `All Products (${filteredProducts.length})`;
 
   return (

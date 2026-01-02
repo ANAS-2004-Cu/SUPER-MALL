@@ -1,45 +1,25 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, Stack } from 'expo-router';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import MiniAlert from '../../components/Component/MiniAlert';
+import { useUserStore } from '../../store/userStore';
 import { checkoutDarkTheme, checkoutLightTheme } from '../../Theme/Cart/checkoutTheme';
-import {
-  getCurrentUser,
-  getShippingFeeByCity,
-  getUserAddresses,
-  placeOrderFromCart,
-} from '../services/backend';
+import { createOrderFromCheckout, getProductsByIds, updateUserData } from '../services/DBAPI';
 
-const computeProductPricing = (product = {}) => {
-  const base = Number(product.price) || 0;
-  let discountPercent = 0;
-  let discounted = base;
-  if (product.discountPrice !== undefined && product.discountPrice !== null) {
-    const dp = Number(product.discountPrice);
-    if (!isNaN(dp) && dp >= 0 && dp <= base) {
-      discounted = dp;
-      discountPercent = base > 0 ? Math.round((1 - discounted / base) * 100) : 0;
-    }
-  } else {
-    const perc = product.discount ?? product.discountPercent ?? product.offerPercentage ?? product.off ?? product.percentageOff;
-    if (perc !== undefined && perc !== null) {
-      const pNum = Number(perc);
-      if (!isNaN(pNum) && pNum > 0 && pNum < 100) {
-        discountPercent = pNum;
-        discounted = base * (1 - pNum / 100);
-      }
-    }
-  }
-  discounted = Math.max(0, discounted);
-  return { base, discounted, discountPercent };
+const computePricing = (product = {}) => {
+  const price = Number(product.price) || 0;
+  const discount = Number(product.discount) || 0;
+  const finalPrice = Math.max(0, price - (price * discount / 100));
+  return { price, discount, finalPrice };
 };
 
 const Checkout = () => {
   const [theme, setTheme] = useState(checkoutLightTheme);
-  const [loading, setLoading] = useState(true);
-  const [fetchingCart, setFetchingCart] = useState(false);
+  const [initializing, setInitializing] = useState(true);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [placingOrder, setPlacingOrder] = useState(false);
   const [alertMsg, setAlertMsg] = useState(null);
   const [alertType, setAlertType] = useState('success');
 
@@ -47,9 +27,15 @@ const Checkout = () => {
   const [selectedAddress, setSelectedAddress] = useState(null);
   const [addressModalVisible, setAddressModalVisible] = useState(false);
 
-  const [cartItems, setCartItems] = useState([]);
-  const [paymentMethod, setPaymentMethod] = useState('CASH'); // 'CASH' | 'CARD' | 'WALLET'
+  const [products, setProducts] = useState([]);
+  const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [shippingFee, setShippingFee] = useState(0);
+  const [regionFees, setRegionFees] = useState({});
+
+  const currentUser = useUserStore((state) => state.user);
+  const setUser = useUserStore((state) => state.setUser);
+  const isLoggedIn = useUserStore((state) => state.isLoggedIn);
+  const userId = currentUser?.uid ? String(currentUser.uid) : null;
 
   const showAlert = (msg, type = 'success') => {
     setAlertMsg(msg);
@@ -63,96 +49,220 @@ const Checkout = () => {
     } catch {}
   }, []);
 
-  const fetchAddresses = useCallback(async () => {
-    const user = getCurrentUser();
-    // TODO replaced firebase call: "const uid = auth.currentUser?.uid;"
-    const uid = user?.uid;
-    if (!uid) return;
-    const list = await getUserAddresses(uid);
-    setAddresses(list);
-    const def = list.find(a => a.isDefault) || list[0] || null;
-    setSelectedAddress(def);
-  }, []);
-
-  const onChangeAddressPress = React.useCallback(async () => {
-    await fetchAddresses();
-    setAddressModalVisible(true);
-  }, [fetchAddresses]);
-
-  const fetchCart = useCallback(async () => {
-    setFetchingCart(true);
+  const loadRegionFees = useCallback(async () => {
     try {
-      const raw = await AsyncStorage.getItem('UserCart');
-      const parsed = raw ? JSON.parse(raw) : [];
-      setCartItems(Array.isArray(parsed) ? parsed : []);
-    } finally {
-      setFetchingCart(false);
+      const cached = await AsyncStorage.getItem('unUpadtingManageDocs');
+      if (!cached) {
+        setRegionFees({});
+        return;
+      }
+      const parsed = JSON.parse(cached);
+      const feeMap = parsed?.RegionFee;
+      if (feeMap && typeof feeMap === 'object') {
+        setRegionFees(feeMap);
+      } else {
+        setRegionFees({});
+      }
+    } catch {
+      setRegionFees({});
     }
   }, []);
 
   useEffect(() => {
     const init = async () => {
-      setLoading(true);
-      await loadTheme();
-      // TODO replaced firebase call: "if (!auth.currentUser) {"
-      if (!getCurrentUser()) {
-        showAlert('Login required', 'error');
-        router.replace('/Authentication/Login');
-        return;
-      }
-      await Promise.all([fetchAddresses(), fetchCart()]);
-      setLoading(false);
+      setInitializing(true);
+      await Promise.all([loadTheme(), loadRegionFees()]);
+      setInitializing(false);
     };
     init();
-  }, [loadTheme, fetchAddresses, fetchCart]);
+  }, [loadTheme, loadRegionFees]);
 
   useEffect(() => {
-    const run = async () => {
+    if (initializing) return;
+    if (!isLoggedIn || !currentUser) {
+      showAlert('Login required', 'error');
+      router.replace('/Authentication/Login');
+    }
+  }, [currentUser, initializing, isLoggedIn]);
+
+  useEffect(() => {
+    const list = Array.isArray(currentUser?.Addresses) ? currentUser.Addresses : [];
+    setAddresses(list);
+    setSelectedAddress((prev) => {
+      if (prev) {
+        const existing = list.find((addr) => addr.id === prev.id);
+        if (existing) return existing;
+      }
+      return list.find((addr) => addr.isDefault) || list[0] || null;
+    });
+  }, [currentUser?.Addresses]);
+
+  const cartEntries = useMemo(() => {
+    const rawCart = currentUser?.Cart;
+    if (!Array.isArray(rawCart)) return [];
+    return rawCart
+      .filter((entry) => entry && entry.productId)
+      .map((entry) => ({
+        productId: String(entry.productId),
+        quantity: Number(entry.quantity) > 0 ? Number(entry.quantity) : 1,
+      }));
+  }, [currentUser?.Cart]);
+
+  const cartProductIds = useMemo(() => {
+    const seen = new Set();
+    return cartEntries
+      .map((entry) => String(entry.productId))
+      .filter((id) => {
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+  }, [cartEntries]);
+
+  const cartIdsKey = useMemo(() => {
+    if (!cartProductIds.length) return '';
+    return [...cartProductIds].sort().join(',');
+  }, [cartProductIds]);
+
+  useEffect(() => {
+    let active = true;
+    if (!cartProductIds.length) {
+      setProducts([]);
+      setLoadingProducts(false);
+      return () => { active = false; };
+    }
+
+    setLoadingProducts(true);
+    (async () => {
       try {
-        const city = selectedAddress?.City || '';
-        if (!city) { setShippingFee(0); return; }
-        // TODO replaced firebase call: "const fee = await getShippingFeeByCity(city);"
-        const fee = await getShippingFeeByCity(city);
-        setShippingFee(fee);
-      } catch { setShippingFee(0); }
+        const res = await getProductsByIds(cartProductIds);
+        if (!active) return;
+        setProducts(res || []);
+      } catch {
+        if (active) setProducts([]);
+      } finally {
+        if (active) setLoadingProducts(false);
+      }
+    })();
+
+    return () => {
+      active = false;
     };
-    run();
-  }, [selectedAddress]);
+  }, [cartIdsKey, cartProductIds]);
+
+  useEffect(() => {
+    const city = selectedAddress?.City;
+    if (!city) {
+      setShippingFee(0);
+      return;
+    }
+
+    const fee = regionFees && typeof regionFees === 'object' ? regionFees[city] : 0;
+    const numericFee = Number(fee);
+    setShippingFee(isNaN(numericFee) ? 0 : numericFee);
+  }, [regionFees, selectedAddress]);
+
+  const mergedItems = useMemo(() => {
+    if (!cartEntries.length) return [];
+    const map = new Map(products.map((p) => [String(p.id), p]));
+    return cartEntries.map((entry) => ({
+      productId: entry.productId,
+      quantity: entry.quantity,
+      product: map.get(String(entry.productId)) || {},
+    }));
+  }, [cartEntries, products]);
 
   const subtotal = useMemo(() => {
-    return cartItems.reduce((sum, it) => {
-      const { discounted } = computeProductPricing(it.product);
+    return mergedItems.reduce((sum, it) => {
+      const { finalPrice } = computePricing(it.product);
       const qty = Number(it.quantity) || 1;
-      return sum + discounted * qty;
+      return sum + finalPrice * qty;
     }, 0);
-  }, [cartItems]);
+  }, [mergedItems]);
 
-  const total = useMemo(() => subtotal + (cartItems.length ? shippingFee : 0), [subtotal, cartItems.length, shippingFee]);
+  const total = useMemo(() => subtotal + (mergedItems.length ? shippingFee : 0), [subtotal, mergedItems.length, shippingFee]);
+
+  const orderedProducts = useMemo(() => {
+    return mergedItems.map(({ product, quantity }) => {
+      const qty = Number(quantity) || 1;
+      const { price, discount, finalPrice } = computePricing(product);
+      return {
+        productId: product.id || '',
+        name: product.name || '',
+        description: product.description || '',
+        image: product.image || '',
+        category: product.category || '',
+        price,
+        discount,
+        finalPrice,
+        quantity: qty,
+        totalItemPrice: finalPrice * qty,
+      };
+    });
+  }, [mergedItems]);
+
+  const baseOrderPayload = useMemo(() => ({
+    userId,
+    OrderedProducts: orderedProducts,
+    addressSnapshot: selectedAddress,
+    paymentMethod: 'CASH',
+    paymentDetails: null,
+    shippingFee,
+    subtotal,
+    total,
+  }), [orderedProducts, selectedAddress, shippingFee, subtotal, total, userId]);
+
+  const onChangeAddressPress = useCallback(() => {
+    setAddressModalVisible(true);
+  }, []);
 
   const onPlaceOrderPress = async () => {
+
+    if (!mergedItems.length) {
+      showAlert('Cart is empty', 'error');
+      return;
+    }
+
     if (!selectedAddress) {
       showAlert('Select shipping address', 'error');
       return;
     }
-    if (paymentMethod === 'CASH') {
-      // TODO replaced firebase call: "const res = await placeOrderFromCart({"
-      const res = await placeOrderFromCart({
-        paymentMethod: 'CASH',
-        addressSnapshot: selectedAddress,
-        shippingFee
-      });
-      if (res.success) {
-        showAlert('Order placed successfully');
-        setTimeout(() => {
-          router.replace('/(tabs)/home');
-        }, 800);
-      } else {
-        showAlert(res.error || 'Failed to create order', 'error');
+
+    const payloadForPayment = { ...baseOrderPayload, paymentMethod };
+
+    if (paymentMethod === 'CARD') {
+      router.push({ pathname: './payment/card', params: { payload: JSON.stringify(payloadForPayment) } });
+      return;
+    }
+
+    if (paymentMethod === 'WALLET') {
+      router.push({ pathname: './payment/wallet', params: { payload: JSON.stringify(payloadForPayment) } });
+      return;
+    }
+
+    setPlacingOrder(true);
+    try {
+      const res = await createOrderFromCheckout(baseOrderPayload);
+      if (!res?.success) {
+        showAlert(res?.error || 'Failed to create order', 'error');
+        return;
       }
-    } else if (paymentMethod === 'CARD') {
-      router.push({ pathname: './payment/card', params: { addressId: selectedAddress?.id || '' } });
-    } else {
-      router.push({ pathname: './payment/wallet', params: { addressId: selectedAddress?.id || '' } });
+
+      setUser({ ...(currentUser || {}), Cart: [] });
+      const syncRes = await updateUserData(userId, { Cart: [] });
+      if (!syncRes?.success) {
+        showAlert('Order placed but cart sync failed', 'error');
+        return;
+      }
+
+      showAlert('Order placed successfully');
+      setTimeout(() => {
+        router.replace('/(tabs)/home');
+      }, 800);
+    } catch (_error) {
+      showAlert('Failed to place order', 'error');
+    } finally {
+      setPlacingOrder(false);
     }
   };
 
@@ -164,7 +274,7 @@ const Checkout = () => {
 
   const renderItem = ({ item }) => {
     const p = item.product || {};
-    const { discounted } = computeProductPricing(p);
+    const { finalPrice } = computePricing(p);
     const qty = Number(item.quantity) || 1;
     return (
       <View style={styles.itemRow}>
@@ -172,7 +282,7 @@ const Checkout = () => {
           {p.name || 'Product'}
         </Text>
         <Text style={[styles.itemQty, { color: theme.muted }]}>x{qty}</Text>
-        <Text style={[styles.itemPrice, { color: theme.text }]}>{'$' + (discounted * qty).toFixed(2)}</Text>
+        <Text style={[styles.itemPrice, { color: theme.text }]}>{'$' + (finalPrice * qty).toFixed(2)}</Text>
       </View>
     );
   };
@@ -184,7 +294,7 @@ const Checkout = () => {
         <Text style={[styles.modalTitle, { color: theme.text }]}>Choose Shipping Address</Text>
         <FlatList
           data={addresses}
-          keyExtractor={(a) => a.id}
+          keyExtractor={(a, index) => a?.id || a?.FullName || String(index)}
           renderItem={({ item }) => (
             <TouchableOpacity
               style={[styles.addrOption, { borderColor: (selectedAddress?.id === item.id) ? theme.accentColor : theme.border }]}
@@ -224,6 +334,8 @@ const Checkout = () => {
     </Modal>
   );
 
+  const isLoading = initializing || loadingProducts;
+
   return (
     <>
       <Stack.Screen
@@ -235,7 +347,7 @@ const Checkout = () => {
         }}
       />
       <View style={[styles.container, { backgroundColor: theme.background }]}>
-        {loading || fetchingCart ? (
+        {isLoading ? (
           <View style={styles.center}>
             <ActivityIndicator size="large" color={theme.accentColor} />
           </View>
@@ -287,18 +399,23 @@ const Checkout = () => {
             <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
               <Text style={[styles.cardTitle, { color: theme.text }]}>Order Summary</Text>
               <FlatList
-                data={cartItems}
+                data={mergedItems}
                 keyExtractor={(it) => it.productId}
                 renderItem={renderItem}
                 ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: theme.border }]} />}
+                ListEmptyComponent={
+                  <Text style={{ color: theme.muted, textAlign: 'center', paddingVertical: 12 }}>
+                    Your cart is empty
+                  </Text>
+                }
               />
               <View style={styles.summaryRow}>
                 <Text style={[styles.sumLabel, { color: theme.muted }]}>Subtotal</Text>
                 <Text style={[styles.sumVal, { color: theme.text }]}>{'$' + subtotal.toFixed(2)}</Text>
               </View>
               <View style={styles.summaryRow}>
-                <Text style={[styles.sumLabel, { color: theme.muted }]}>Shipping</Text>
-                <Text style={[styles.sumVal, { color: theme.text }]}>{cartItems.length ? '$' + shippingFee.toFixed(2) : '$0.00'}</Text>
+                <Text style={[styles.sumLabel, { color: theme.muted }]}>Shipping Fees</Text>
+                <Text style={[styles.sumVal, { color: theme.text }]}>{mergedItems.length ? '$' + shippingFee.toFixed(2) : '$0.00'}</Text>
               </View>
               <View style={styles.summaryRow}>
                 <Text style={[styles.totalLabel, { color: theme.text }]}>Total</Text>
@@ -308,13 +425,19 @@ const Checkout = () => {
 
             {/* Place Order */}
             <TouchableOpacity
-              style={[styles.placeBtn, { backgroundColor: theme.accentColor }]}
+              style={[styles.placeBtn, { backgroundColor: theme.accentColor, opacity: placingOrder || !mergedItems.length ? 0.75 : 1 }]}
               activeOpacity={0.9}
               onPress={onPlaceOrderPress}
-              disabled={!cartItems.length}
+              disabled={!mergedItems.length || placingOrder}
             >
               <Text style={styles.placeText}>
-                {paymentMethod === 'CASH' ? 'Place Order (Cash)' : paymentMethod === 'CARD' ? 'Continue to Card Payment' : 'Continue to Wallet Payment'}
+                {placingOrder
+                  ? 'Placing Order...'
+                  : paymentMethod === 'CASH'
+                    ? 'Place Order (Cash)'
+                    : paymentMethod === 'CARD'
+                      ? 'Continue to Card Payment'
+                      : 'Continue to Wallet Payment'}
               </Text>
               <Icon name="arrow-right" size={18} color="#fff" />
             </TouchableOpacity>

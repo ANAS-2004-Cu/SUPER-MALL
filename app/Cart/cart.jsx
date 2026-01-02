@@ -1,20 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Stack, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import MiniAlert from '../../components/Component/MiniAlert';
 import { useUserStore } from '../../store/userStore';
 import { cartDarkTheme, cartLightTheme } from '../../Theme/Cart/cartTheme';
-import {
-    clearCart as clearCartBackend,
-    getCart,
-    getCurrentUser,
-    getProductById,
-    onAuthChange,
-    queueCartOperation,
-    removeCartItem,
-} from '../services/backend';
+import { getProductsByIds, updateUserData } from '../services/DBAPI';
 
 const computeProductPricing = (product = {}) => {
   const base = Number(product.price) || 0;
@@ -54,12 +46,14 @@ const getMaxAllowedForProduct = (product = {}) => {
 const CartPage = () => {
   const router = useRouter();
   const [theme, setTheme] = useState(cartLightTheme);
-  const [cartItems, setCartItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [products, setProducts] = useState([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
   const [alertMsg, setAlertMsg] = useState(null);
   const [alertType, setAlertType] = useState('success');
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [fetchingProducts, setFetchingProducts] = useState(false);
+
+  const currentUser = useUserStore((state) => state.user);
+  const setUser = useUserStore((state) => state.setUser);
+  const userId = currentUser?.uid ? String(currentUser.uid) : null;
 
   const showAlert = (msg, type = 'success') => {
     setAlertMsg(msg);
@@ -74,77 +68,32 @@ const CartPage = () => {
     } catch {}
   }, []);
 
-  const checkLogin = useCallback(async () => {
-    try {
-      const user = useUserStore.getState().user;
-      // TODO replaced firebase call: "setIsLoggedIn(!!auth.currentUser || (userJson && userJson !== 'undefined'));"
-      setIsLoggedIn(!!getCurrentUser() || !!user);
-    } catch {
-      setIsLoggedIn(false);
-    }
-  }, []);
+  const cartEntries = useMemo(() => {
+    const rawCart = currentUser?.Cart;
+    if (!Array.isArray(rawCart)) return [];
+    return rawCart
+      .filter((entry) => entry && entry.productId)
+      .map((entry) => ({
+        productId: String(entry.productId),
+        quantity: Number(entry.quantity) > 0 ? Number(entry.quantity) : 1,
+      }));
+  }, [currentUser?.Cart]);
 
-  const loadCartFromFirestore = useCallback(async () => {
-    // TODO replaced firebase call: "if (!auth.currentUser) {"
-    const user = getCurrentUser();
-    if (!user) {
-      setCartItems([]);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    try {
-      // TODO replaced firebase call: "const rawCart = await getUserCart(auth.currentUser.uid);"
-      const cartSnapshot = await getCart(user.uid);
-      const rawCart = cartSnapshot.items || [];
-      if (!rawCart.length) {
-        setCartItems([]);
-        return;
-      }
-      setFetchingProducts(true);
-      const enriched = [];
-      for (const entry of rawCart) {
-        try {
-          // TODO replaced firebase call: "const prodRes = await getDocument('products', entry.productId);"
-          const productData = await getProductById(entry.productId);
-          if (productData) {
-            enriched.push({
-              productId: entry.productId,
-              quantity: entry.quantity || 1,
-              product: productData
-            });
-          }
-        } catch {}
-      }
-      // Clamp any quantities that exceed constraints
-      const adjusted = [];
-      for (const ci of enriched) {
-        const maxAllowed = getMaxAllowedForProduct(ci.product);
-        let q = ci.quantity || 1;
-        if (q > maxAllowed) {
-          q = maxAllowed < 1 ? 1 : maxAllowed;
-          // persist correction
-          // TODO replaced firebase call: "await updateCartItemQuantity(auth.currentUser?.uid, ci.productId, q);"
-          await queueCartOperation(user.uid, { productId: ci.productId, type: 'set', quantity: q });
-        }
-        adjusted.push({ ...ci, quantity: q });
-      }
-      setCartItems(adjusted);
-    } finally {
-      setFetchingProducts(false);
-      setLoading(false);
-    }
-  }, []);
+  const cartProductIds = useMemo(() => {
+    const seen = new Set();
+    return cartEntries
+      .map((entry) => String(entry.productId))
+      .filter((id) => {
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+  }, [cartEntries]);
 
-  // Persist enriched cart snapshot for Checkout/Card/Wallet screens
-  useEffect(() => {
-    const persist = async () => {
-      try {
-        await AsyncStorage.setItem('UserCart', JSON.stringify(cartItems || []));
-      } catch {}
-    };
-    persist();
-  }, [cartItems]);
+  const cartIdsKey = useMemo(() => {
+    if (!cartProductIds.length) return '';
+    return [...cartProductIds].sort().join(',');
+  }, [cartProductIds]);
 
   useEffect(() => {
     loadTheme();
@@ -153,34 +102,59 @@ const CartPage = () => {
   }, [loadTheme]);
 
   useEffect(() => {
-    checkLogin();
-  }, [checkLogin]);
+    let active = true;
+    if (!cartProductIds.length) {
+      setProducts([]);
+      setLoadingProducts(false);
+      return () => { active = false; };
+    }
 
-  useEffect(() => {
-    loadCartFromFirestore();
-  }, [loadCartFromFirestore]);
+    setLoadingProducts(true);
+    (async () => {
+      try {
+        const res = await getProductsByIds(cartProductIds);
+        if (!active) return;
+        setProducts(res || []);
+      } catch {
+        if (active) setProducts([]);
+      } finally {
+        if (active) setLoadingProducts(false);
+      }
+    })();
 
-  useEffect(() => {
-    const unsubscribe = onAuthChange(() => {
-      checkLogin();
-      loadCartFromFirestore();
-    });
-    return unsubscribe;
-  }, [checkLogin, loadCartFromFirestore]);
+    return () => {
+      active = false;
+    };
+  }, [cartIdsKey]);
+
+  const persistCart = useCallback(
+    async (nextCart) => {
+      if (!currentUser || !userId) return false;
+      const previousUser = currentUser;
+      setUser({ ...previousUser, Cart: nextCart });
+      const result = await updateUserData(userId, { Cart: nextCart });
+      if (!result?.success) {
+        setUser(previousUser);
+        return false;
+      }
+      return true;
+    },
+    [currentUser, setUser, userId]
+  );
 
   const updateQuantity = async (productId, delta) => {
-    const target = cartItems.find(c => c.productId === productId);
+    const target = cartEntries.find((c) => String(c.productId) === String(productId));
     if (!target) return;
-    const product = target.product || {};
+    const product = products.find((p) => String(p.id) === String(productId)) || {};
     const maxAllowed = getMaxAllowedForProduct(product);
-    const current = target.quantity || 1;
-    // Prevent going below 1
-    if (delta < 0 && current <= 1) {
+    const currentQty = target?.quantity || 1;
+    let desired = currentQty + delta;
+
+    if (desired < 1) {
       showAlert('Minimum quantity is 1', 'error');
       return;
     }
-    let desired = current + delta;
-    if (desired < 1) desired = 1;
+
     if (desired > maxAllowed) {
       const stock = Number(product.stockQuantity);
       const perOrder = Number(product.AvilableQuantityBerOeder);
@@ -191,32 +165,30 @@ const CartPage = () => {
       } else {
         showAlert('Cannot increase quantity', 'error');
       }
-      desired = Math.min(current, maxAllowed);
+      return;
     }
-    if (desired === current) return;
-    setCartItems(prev =>
-      prev.map(ci =>
-        ci.productId === productId ? { ...ci, quantity: desired } : ci
-      )
-    );
-    const user = getCurrentUser();
-    if (!user) return;
-    // TODO replaced firebase call: "await updateCartItemQuantity(auth.currentUser?.uid, productId, desired);"
-    await queueCartOperation(user.uid, {
-      productId,
-      type: 'set',
-      quantity: desired,
-      maxQuantity: maxAllowed,
+
+    if (desired === currentQty) return;
+
+    const nextCart = cartEntries.map((entry) => {
+      if (String(entry.productId) !== String(productId)) return entry;
+      return { productId: String(productId), quantity: desired };
     });
+
+    const ok = await persistCart(nextCart);
+    if (!ok) {
+      showAlert('Failed to update cart', 'error');
+    }
   };
 
   const removeItem = async (productId) => {
-    setCartItems(prev => prev.filter(ci => ci.productId !== productId));
-    const user = getCurrentUser();
-    if (!user) return;
-    // TODO replaced firebase call: "await removeCartItem(auth.currentUser?.uid, productId);"
-    await removeCartItem(user.uid, productId);
-    showAlert('Item removed', 'success');
+    const nextCart = cartEntries.filter((entry) => String(entry.productId) !== String(productId));
+    const ok = await persistCart(nextCart);
+    if (!ok) {
+      showAlert('Failed to remove item', 'error');
+    } else {
+      showAlert('Item removed', 'success');
+    }
   };
 
   const clearCart = () => {
@@ -226,33 +198,42 @@ const CartPage = () => {
         text: 'Yes',
         style: 'destructive',
         onPress: async () => {
-          setCartItems([]);
-          const user = getCurrentUser();
-          if (!user) return;
-          // TODO replaced firebase call: "await clearUserCart(auth.currentUser?.uid);"
-          await clearCartBackend(user.uid);
-          // AsyncStorage will be updated by the cartItems effect
+          const ok = await persistCart([]);
+          if (!ok) {
+            showAlert('Failed to clear cart', 'error');
+            return;
+          }
           showAlert('Cart cleared', 'success');
         }
       }
     ]);
   };
 
-  const totalItems = cartItems.reduce((s, it) => s + (Number(it.quantity) || 1), 0);
-  const grandTotal = cartItems.reduce((sum, it) => {
+  const mergedItems = useMemo(() => {
+    if (!cartEntries.length) return [];
+    const map = new Map(products.map((p) => [String(p.id), p]));
+    return cartEntries.map((entry) => ({
+      productId: entry.productId,
+      quantity: entry.quantity,
+      product: map.get(String(entry.productId)) || {},
+    }));
+  }, [cartEntries, products]);
+
+  const totalItems = cartEntries.length;
+  const grandTotal = mergedItems.reduce((sum, it) => {
     const { discounted } = computeProductPricing(it.product);
     const qty = Number(it.quantity) || 1;
     return sum + discounted * qty;
   }, 0);
 
-  const formatPrice = (n) => '$' + (n || 0).toFixed(2);
+  const formatPrice = (n) => {
+    const num = Number(n);
+    const safe = isNaN(num) ? 0 : num;
+    return '$' + safe.toFixed(2);
+  };
 
   const handleCheckout = () => {
-    if (!isLoggedIn) {
-      showAlert('Login required', 'error');
-      return;
-    }
-    if (cartItems.length === 0) {
+    if (!mergedItems.length) {
       showAlert('Cart is empty', 'error');
       return;
     }
@@ -267,6 +248,8 @@ const CartPage = () => {
     const maxAllowed = getMaxAllowedForProduct(p);
     const disablePlus = qty >= maxAllowed;
     const disableMinus = qty <= 1;
+    const totalPrice = discounted * qty;
+    const originalTotal = base * qty;
 
     return (
       <View style={[styles.itemContainer, { backgroundColor: theme.cardBackground, shadowColor: theme.searchBarShadow }]}>
@@ -297,14 +280,19 @@ const CartPage = () => {
         <View style={styles.itemInfo}>
           <Text style={[styles.itemTitle, { color: theme.text }]} numberOfLines={2}>{p.name || 'Unknown product'}</Text>
           <View style={styles.priceRow}>
-            <Text style={[styles.itemPrice, { color: theme.accentColor }]}>
-              {formatPrice(discounted)}
-            </Text>
-            {hasDiscount && (
-              <Text style={[styles.originalPrice, { color: theme.inputPlaceholder }]}>
-                {formatPrice(base)}
+            <View>
+              <Text style={[styles.itemPrice, { color: theme.accentColor }]}>
+                {formatPrice(totalPrice)}
               </Text>
-            )}
+              {hasDiscount && (
+                <Text style={[styles.originalPrice, { color: theme.inputPlaceholder }]}>
+                  {formatPrice(originalTotal)}
+                </Text>
+              )}
+            </View>
+            <Text style={[styles.perItemPrice, { color: theme.inputPlaceholder }]}>
+              {formatPrice(discounted)} / Piece
+            </Text>
           </View>
           <View style={styles.qtyRow}>
             <TouchableOpacity
@@ -340,7 +328,7 @@ const CartPage = () => {
           headerStyle: { backgroundColor: theme.background },
           headerTintColor: theme.text,
           headerRight: () => (
-            cartItems.length > 0 ? (
+            mergedItems.length > 0 ? (
               <TouchableOpacity onPress={clearCart} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 }}>
                 <Icon name="x-circle" size={20} color={theme.accentColor} />
                 <Text style={{ color: theme.accentColor, marginLeft: 6, fontSize: 12, fontWeight: '600' }}>Delete All</Text>
@@ -350,22 +338,11 @@ const CartPage = () => {
         }}
       />
       <View style={[styles.container, { backgroundColor: theme.background }]}>
-        {!isLoggedIn ? (
-          <View style={styles.emptyContainer}>
-            <Icon name="lock" size={70} color={theme.accentColor} />
-            <Text style={[styles.emptyText, { color: theme.text }]}>Login to view your cart</Text>
-            <TouchableOpacity
-              style={[styles.shopBtn, { backgroundColor: theme.accentColor }]}
-              onPress={() => router.push('/Authentication/Login')}
-            >
-              <Text style={styles.shopBtnText}>Login</Text>
-            </TouchableOpacity>
-          </View>
-        ) : loading || fetchingProducts ? (
+        {loadingProducts ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={theme.loadingIndicator || theme.accentColor} />
           </View>
-        ) : cartItems.length === 0 ? (
+        ) : mergedItems.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Icon name="shopping-cart" size={70} color={theme.accentColor} />
             <Text style={[styles.emptyText, { color: theme.text }]}>Your cart is empty</Text>
@@ -379,7 +356,7 @@ const CartPage = () => {
         ) : (
           <>
             <FlatList
-              data={cartItems}
+              data={mergedItems}
               keyExtractor={(it) => it.productId?.toString()}
               renderItem={renderItem}
               contentContainerStyle={{ paddingBottom: 140 }}
@@ -435,14 +412,15 @@ const styles = StyleSheet.create({
   itemImage: { width: '100%', height: '100%' },
   itemInfo: { flex: 1, justifyContent: 'space-between' },
   itemTitle: { fontSize: 14, fontWeight: '600' },
-  priceRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
+  priceRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginTop: 4 },
   itemPrice: { marginTop: 4, fontSize: 15, fontWeight: '700' },
   originalPrice: {
     fontSize: 12,
     textDecorationLine: 'line-through',
-    marginLeft: 8,
+    marginTop: 2,
     fontWeight: '500'
   },
+  perItemPrice: { fontSize: 12, fontWeight: '700' },
   discountBadge: {
     position: 'absolute',
     top: 4,

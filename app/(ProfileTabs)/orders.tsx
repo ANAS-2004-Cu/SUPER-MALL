@@ -29,9 +29,11 @@ interface Product {
   productId?: string;
   name?: string;
   price?: number;
+  finalPrice?: number;
   image?: string;
   description?: string;
   quantity?: number | string;
+  totalItemPrice?: number;
   discount?: number | string;
   category?: string;
 }
@@ -74,43 +76,6 @@ const Orders = () => {
     return Number.isFinite(parsed) ? parsed : fallback;
   };
 
-  const normalizeQuantityValue = (value: unknown) => {
-    const parsed = normalizeNumberValue(value, 1);
-    return parsed > 0 ? parsed : 1;
-  };
-
-  const normalizeDiscountValue = (value: unknown) => {
-    const parsed = normalizeNumberValue(value, 0);
-    if (parsed <= 0) {
-      return 0;
-    }
-    if (parsed > 100) {
-      return 100;
-    }
-    return parsed;
-  };
-
-  const getProductPricingDetails = (product: Product) => {
-    const price = normalizeNumberValue(product.price, 0);
-    const quantity = normalizeQuantityValue(product.quantity);
-    const discount = normalizeDiscountValue(product.discount);
-    const discountedUnitPrice = price - (price * discount / 100);
-
-    return {
-      price,
-      quantity,
-      discount,
-      discountedUnitPrice,
-      subtotal: discountedUnitPrice * quantity,
-    };
-  };
-
-  const calculateProductTotal = (product: Product) => getProductPricingDetails(product).subtotal;
-
-  const calculateOrderTotal = (products: Product[]) => {
-    return products.reduce((acc, product) => acc + calculateProductTotal(product), 0);
-  };
-
   // userId is derived from the global store; no AsyncStorage lookup required
 
   const handleOrderPress = (order: Order) => {
@@ -124,6 +89,29 @@ const Orders = () => {
     } catch (error) {
       console.error('Error navigating to order summary:', error);
     }
+  };
+
+  const toTimestampMs = (dateValue: Order['createdAt']) => {
+    if (!dateValue) return 0;
+
+    if (typeof dateValue === 'object' && dateValue !== null && 'seconds' in dateValue && typeof dateValue.seconds === 'number') {
+      return dateValue.seconds * 1000 + Math.floor((dateValue.nanoseconds || 0) / 1_000_000);
+    }
+
+    if (dateValue instanceof Date) {
+      return dateValue.getTime();
+    }
+
+    if (typeof dateValue === 'number') {
+      return Number.isFinite(dateValue) ? dateValue : 0;
+    }
+
+    if (typeof dateValue === 'string') {
+      const parsed = Date.parse(dateValue.trim());
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    return 0;
   };
 
   const formatDate = (dateValue: Order['createdAt']) => {
@@ -174,9 +162,9 @@ const Orders = () => {
     paymentDetails: order.paymentDetails ? { ...order.paymentDetails } : null,
     OrderedProducts: order.OrderedProducts.map(product => ({
       ...product,
-      price: normalizeNumberValue(product.price, 0),
-      discount: normalizeDiscountValue(product.discount),
-      quantity: normalizeQuantityValue(product.quantity),
+      quantity: product.quantity,
+      finalPrice: normalizeNumberValue(product.finalPrice, 0),
+      totalItemPrice: normalizeNumberValue(product.totalItemPrice, 0),
     })),
   });
 
@@ -217,9 +205,9 @@ const Orders = () => {
   };
 
   const renderProductItem = ({ item }: { item: Product }) => {
-    const pricing = getProductPricingDetails(item);
-    const hasDiscount = pricing.discount > 0;
-    const discountedSubtotal = pricing.subtotal;
+    const unitPrice = normalizeNumberValue(item.finalPrice ?? item.price, 0);
+    const itemSubtotal = normalizeNumberValue(item.totalItemPrice, 0);
+    const quantity = normalizeNumberValue(item.quantity, 0);
 
     return (
       <View
@@ -249,35 +237,19 @@ const Orders = () => {
             </Text>
 
             <View style={styles.priceQuantityRow}>
-              {hasDiscount ? (
-                <View style={styles.discountContainer}>
-                  <Text style={[styles.originalPrice, { color: theme.originalPriceColor }]}>
-                    ${pricing.price.toFixed(2)}
-                  </Text>
-                  <Text style={[styles.discountedPrice, { color: theme.discountedPriceColor }]}>
-                    ${pricing.discountedUnitPrice.toFixed(2)}
-                  </Text>
-                  <View style={[styles.discountBadge, { backgroundColor: theme.discountBadgeBackground }]}>
-                    <Text style={[styles.discountBadgeText, { color: theme.discountTextColor }]}>
-                      {pricing.discount}% OFF
-                    </Text>
-                  </View>
-                </View>
-              ) : (
-                <Text style={[styles.regularPrice, { color: theme.priceColor }]}>
-                  ${pricing.price.toFixed(2)}
-                </Text>
-              )}
+              <Text style={[styles.regularPrice, { color: theme.priceColor }]}>
+                ${unitPrice.toFixed(2)}
+              </Text>
 
               <View style={[styles.quantityBadge, { backgroundColor: theme.quantityBadgeBackground }]}>
                 <Text style={[styles.quantityText, { color: theme.quantityTextColor }]}>
-                  Qty: {pricing.quantity}
+                  Qty: {quantity}
                 </Text>
               </View>
             </View>
 
             <Text style={[styles.subtotalText, { color: theme.subtotalValueColor }]}>
-              Subtotal: ${discountedSubtotal.toFixed(2)}
+              Subtotal: ${itemSubtotal.toFixed(2)}
             </Text>
           </View>
         </View>
@@ -357,27 +329,24 @@ const Orders = () => {
         const ordersData = userOrders.map((order: any, index: number) => {
           const orderedProducts = Array.isArray(order.OrderedProducts) ? order.OrderedProducts : [];
           const mappedProducts = orderedProducts.map((product: any, productIndex: number) => {
-            const price = normalizeNumberValue(product.price, 0);
-            const quantity = normalizeQuantityValue(product.quantity);
-            const discount = normalizeDiscountValue(product.discount);
-
             return {
               id: product.productId || product.id || `product_${index}_${productIndex}`,
               productId: product.productId || product.id || `product_${index}_${productIndex}`,
               name: product.name,
-              price,
+              price: normalizeNumberValue(product.price, 0),
+              finalPrice: normalizeNumberValue(product.finalPrice, 0),
               image: product.image,
               description: product.description,
-              quantity,
-              discount,
+              quantity: product.quantity,
+              totalItemPrice: normalizeNumberValue(product.totalItemPrice, 0),
               category: product.category || 'Uncategorized',
             };
           });
 
-          const orderSubtotal = calculateOrderTotal(mappedProducts);
           const shippingFee = normalizeNumberValue(order.shippingFee, 0);
-          const subtotal = normalizeNumberValue(order.subtotal, orderSubtotal);
-          const total = normalizeNumberValue(order.total, subtotal + shippingFee);
+          const subtotal = normalizeNumberValue(order.subtotal ?? order.orderTotal, 0);
+          const total = normalizeNumberValue(order.total ?? order.orderTotal, 0);
+          const orderTotal = normalizeNumberValue(order.orderTotal ?? order.total, 0);
 
           return {
             id: order.id || `order_${index}`,
@@ -390,14 +359,15 @@ const Orders = () => {
             subtotal,
             total,
             walletPhone: order.walletPhone ? String(order.walletPhone) : '',
-            orderTotal: total,
+            orderTotal,
           };
         });
 
-        const totalSpentValue = ordersData.reduce((acc: number, order: Order) => acc + order.orderTotal, 0);
+        const sortedOrders = [...ordersData].sort((a, b) => toTimestampMs(b.createdAt) - toTimestampMs(a.createdAt));
+        const totalSpentValue = sortedOrders.reduce((acc: number, order: Order) => acc + order.orderTotal, 0);
 
         if (isMounted) {
-          setOrders(ordersData);
+          setOrders(sortedOrders);
           setTotalSpent(totalSpentValue);
         }
       } catch (error) {

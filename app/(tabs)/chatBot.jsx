@@ -2,11 +2,12 @@ import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image,FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useFocusEffect } from 'expo-router';
 import { darkTheme, lightTheme } from '../../Theme/Tabs/ChatBotTheme';
 import context from '../ChatBot/context';
+import { useUserStore } from "../../store/userStore";
 
 const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_API_KEY}`;
@@ -22,6 +23,7 @@ const suggestions = [
 ];
 
 export default function GeminiChat() {
+  const { user: userData, isLoggedIn } = useUserStore();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -118,9 +120,11 @@ export default function GeminiChat() {
       ]}>
         <Text style={[styles.bubbleText, theme.bubbleText]}>{item.content}</Text>
       </View>
-      {item.role === 'user' && (
+      {item.role === 'user' && (isLoggedIn ? (
+        <Image source={{ uri: userData?.image }} style={[styles.icon, styles.userImage]} />
+      ) : (
         <Icon name="person-circle" size={24} color={theme.userIcon.color} style={styles.icon} />
-      )}
+      ))}
     </View>
   );
 
@@ -194,6 +198,12 @@ const styles = StyleSheet.create({
   icon: {
     marginHorizontal: 6,
   },
+  userImage: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#e0e0e0'
+  },
   header: {
     paddingVertical: 16,
     alignItems: 'center',
@@ -202,7 +212,9 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    paddingTop:30
+    paddingTop:30,
+    paddingHorizontal: 5,
+    paddingBottom: 10,
   },
   messagesContainer: {
     paddingBottom: 16

@@ -40,37 +40,6 @@ const normalizeNumberValue = (value, fallback = 0) => {
     return Number.isFinite(parsed) ? parsed : fallback;
 };
 
-const normalizeQuantityValue = (value) => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
-};
-
-const normalizeDiscountValue = (value) => {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-        return 0;
-    }
-    if (parsed > 100) {
-        return 100;
-    }
-    return parsed;
-};
-
-const getProductPricingDetails = (product = {}) => {
-    const price = normalizeNumberValue(product.price, 0);
-    const quantity = normalizeQuantityValue(product.quantity);
-    const discount = normalizeDiscountValue(product.discount);
-    const discountedUnitPrice = price - (price * discount / 100);
-
-    return {
-        price,
-        quantity,
-        discount,
-        discountedUnitPrice,
-        subtotal: discountedUnitPrice * quantity,
-    };
-};
-
 const getPaymentDisplay = (method, walletLastFour, cardLastFour) => {
     const label = method?.trim() || 'Not provided';
     const normalized = label.toLowerCase();
@@ -262,7 +231,9 @@ const OrderSummary = () => {
                 <View style={[styles.section, { backgroundColor: theme.sectionBackground }]}> 
                     <Text style={[styles.sectionTitle, { color: theme.sectionTitleColor }]}>Items</Text>
                     {(order.OrderedProducts || []).map((product, index) => {
-                        const pricing = getProductPricingDetails(product);
+                        const unitPrice = normalizeNumberValue(product.finalPrice ?? product.price, 0);
+                        const subtotalValue = normalizeNumberValue(product.totalItemPrice, 0);
+                        const quantity = normalizeNumberValue(product.quantity, 0);
                         const productIdentifier = product.productId || product.id;
 
                         return (
@@ -287,30 +258,15 @@ const OrderSummary = () => {
                                         {product.description || 'No description available.'}
                                     </Text>
                                     <View style={styles.productMetaRow}>
-                                        <Text style={[styles.productMeta, { color: theme.productMetaColor }]}>Qty: {pricing.quantity}</Text>
+                                        <Text style={[styles.productMeta, { color: theme.productMetaColor }]}>Qty: {quantity}</Text>
                                         <Text style={[styles.productMeta, { color: theme.productMetaColor }]}>
-                                            {formatCurrency(pricing.discountedUnitPrice)} / unit
+                                            {formatCurrency(unitPrice)} / unit
                                         </Text>
                                     </View>
                                     <View style={[styles.productMetaRow, styles.productPriceRow]}>
                                         <Text style={[styles.productSubtotal, { color: theme.productMetaSecondaryColor }]}>
-                                            Subtotal: {formatCurrency(pricing.subtotal)}
+                                            Subtotal: {formatCurrency(subtotalValue)}
                                         </Text>
-                                        <View style={styles.discountGroup}>
-                                            <Text style={[styles.discountText, { color: theme.discountBadgeText }]}>
-                                                Discount: {pricing.discount}%
-                                            </Text>
-                                            {pricing.discount > 0 && (
-                                                <View
-                                                    style={[
-                                                        styles.discountBadge,
-                                                        { backgroundColor: theme.discountBadgeBackground, marginLeft: 8 },
-                                                    ]}
-                                                >
-                                                    <Text style={[styles.discountBadgeText, { color: theme.discountBadgeText }]}>Save</Text>
-                                                </View>
-                                            )}
-                                        </View>
                                     </View>
                                 </View>
                             </TouchableOpacity>
@@ -441,23 +397,6 @@ const styles = StyleSheet.create({
     productSubtotal: {
         fontSize: 13,
         fontWeight: '600',
-    },
-    discountGroup: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    discountText: {
-        fontSize: 12,
-        fontWeight: '600',
-    },
-    discountBadge: {
-        borderRadius: 12,
-        paddingHorizontal: 8,
-        paddingVertical: 2,
-    },
-    discountBadgeText: {
-        fontSize: 11,
-        fontWeight: '700',
     },
     fallbackContainer: {
         flex: 1,

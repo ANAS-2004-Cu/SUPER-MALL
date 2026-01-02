@@ -12,7 +12,7 @@
     },
     {
       "folderPath": "SUPER-MALL\\app\\(tabs)\\",
-      "color": "foldercolorizer.color_00ccff"
+      "color": "foldercolorizer.color_00cc33"
     },
     {
       "folderPath": "SUPER-MALL\\app\\Authentication\\",
@@ -20,7 +20,7 @@
     },
     {
       "folderPath": "SUPER-MALL\\app\\Cart\\",
-      "color": "foldercolorizer.color_00ccff"
+      "color": "foldercolorizer.color_00cc33"
     },
     {
       "folderPath": "SUPER-MALL\\app\\Pages\\",
@@ -100,7 +100,7 @@
     },
     {
       "folderPath": "SUPER-MALL\\app\\Pages\\OrderSummary.jsx\\",
-      "color": "foldercolorizer.color_00cc33"
+      "color": "foldercolorizer.color_ff0000"
     },
     {
       "folderPath": "SUPER-MALL\\app\\(ProfileTabs)\\orders.tsx\\",
@@ -145,6 +145,26 @@
     {
       "folderPath": "SUPER-MALL\\components\\Component\\ProductCard.jsx\\",
       "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\(tabs)\\home.jsx\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\Cart\\cart.jsx\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\Cart\\checkout.jsx\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\store\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\app\\Pages\\singlepage.jsx\\",
+      "color": "foldercolorizer.color_ff0000"
     }
   ]
 }
