@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import MiniAlert from '../../../components/Component/MiniAlert';
 import { useUserStore } from '../../../store/userStore';
 import { paymentDarkTheme, paymentLightTheme } from '../../../Theme/Cart/paymentTheme';
@@ -23,6 +23,9 @@ const WalletPayment = () => {
   const [alertMsg, setAlertMsg] = useState(null);
   const [alertType, setAlertType] = useState('success');
   const [loading, setLoading] = useState(true);
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
+  const confirmationTimerRef = useRef(null);
 
   const [phone, setPhone] = useState('');
 
@@ -59,12 +62,21 @@ const WalletPayment = () => {
     return null;
   };
 
+  useEffect(() => {
+    return () => {
+      if (confirmationTimerRef.current) clearTimeout(confirmationTimerRef.current);
+    };
+  }, []);
+
   const placeOrder = async () => {
     try {
       if (!parsedPayload) {
         router.replace('/Cart/checkout');
         return;
       }
+
+      if (isPlacingOrder) return;
+      setIsPlacingOrder(true);
 
       const finalPayload = {
         ...parsedPayload,
@@ -78,6 +90,7 @@ const WalletPayment = () => {
 
       if (!res.success) {
         showAlert(res.error || 'Failed to create order', 'error');
+        setIsPlacingOrder(false);
         return;
       }
 
@@ -85,14 +98,18 @@ const WalletPayment = () => {
       const syncRes = await updateUserData(userId, { Cart: [] });
       if (!syncRes?.success) {
         showAlert('Order placed but cart sync failed', 'error');
+        setIsPlacingOrder(false);
         return;
       }
 
-      Alert.alert('Payment Success', 'Your order has been placed successfully.', [
-        { text: 'OK', onPress: () => router.replace('/(tabs)/home') }
-      ]);
+      setShowConfirmation(true);
+      confirmationTimerRef.current = setTimeout(() => {
+        setShowConfirmation(false);
+        router.replace('/(tabs)/home');
+      }, 4000);
     } catch {
       showAlert('Failed to create order', 'error');
+      setIsPlacingOrder(false);
     }
   };
 
@@ -128,12 +145,29 @@ const WalletPayment = () => {
               <View style={styles.row}><Text style={[styles.total, { color: theme.text }]}>Total</Text><Text style={[styles.total, { color: theme.accentColor }]}>{'$' + total.toFixed(2)}</Text></View>
             </View>
 
-            <TouchableOpacity style={[styles.payBtn, { backgroundColor: theme.accentColor }]} onPress={onConfirm} activeOpacity={0.9}>
-              <Text style={styles.payText}>Pay and Place Order</Text>
+            <TouchableOpacity
+              style={[styles.payBtn, { backgroundColor: theme.accentColor, opacity: isPlacingOrder ? 0.7 : 1 }]}
+              onPress={onConfirm}
+              activeOpacity={0.9}
+              disabled={isPlacingOrder}
+            >
+              <Text style={styles.payText}>{isPlacingOrder ? 'Processing...' : 'Pay and Place Order'}</Text>
             </TouchableOpacity>
           </>
         )}
       </View>
+
+      {showConfirmation && (
+        <View style={[styles.confirmOverlay, { backgroundColor: theme.background }]}
+        >
+          <Image
+            source={require('../../../assets/images/ConfirmationOrder.gif')}
+            style={styles.confirmGif}
+            resizeMode="contain"
+          />
+        </View>
+      )}
+
       {alertMsg && (
         <MiniAlert
           message={alertMsg}
@@ -155,7 +189,18 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
   total: { fontWeight: '800' },
   payBtn: { paddingVertical: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  payText: { color: '#fff', fontWeight: '800' }
+  payText: { color: '#fff', fontWeight: '800' },
+  confirmOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+    zIndex: 999,
+  },
+  confirmGif: {
+    width: '85%',
+    height: 280,
+  },
 });
 
 export default WalletPayment;

@@ -8,7 +8,7 @@ import ProductCard from '../../components/Component/ProductCard';
 import { useUserStore } from '../../store/userStore';
 import { darkTheme as cardDarkTheme, lightTheme as cardLightTheme } from '../../Theme/Component/ProductCardTheme';
 import { darkTheme, lightTheme } from '../../Theme/Tabs/HomeTheme';
-import { getFilteredProductsPage,fetchManageDocs, getProductNameSuggestions, getProductsByIds } from '../services/DBAPI.tsx';
+import { getFilteredProductsPage, fetchManageDocs, getProductNameSuggestions, getProductsByIds } from '../services/DBAPI.tsx';
 
 const Categories = [
   { id: 1, name: "Mobile" },
@@ -244,13 +244,13 @@ const HomePage = () => {
     }, [loadCategoriesFromStorage])
   );
   const refreshManageDocs = async () => {
-  const manageResponse = await fetchManageDocs();
+    const manageResponse = await fetchManageDocs();
 
-  await AsyncStorage.setItem(
-    'UpadtingManageDocs',
-    JSON.stringify(manageResponse.UpadtingManageDocs)
-  );
-};
+    await AsyncStorage.setItem(
+      'UpadtingManageDocs',
+      JSON.stringify(manageResponse.UpadtingManageDocs)
+    );
+  };
 
 
   const onRefresh = useCallback(
@@ -347,7 +347,7 @@ const HomePage = () => {
 
   const handleBannerPress = (item) => {
     if (!item) return;
-    
+
     switch (item.action) {
       case "navigate":
         if (item.id) {
@@ -357,7 +357,7 @@ const HomePage = () => {
           });
         }
         break;
-        
+
       case "search":
         if (item.SearchKey) {
           router.push({
@@ -366,15 +366,15 @@ const HomePage = () => {
           });
         }
         break;
-        
+
       case "offer":
       default:
         const imgParam = item && item.img ? encodeURIComponent(item.img) : "";
         const contentParam = item && item.content ? encodeURIComponent(item.content) : "";
-        
+
         router.push({
           pathname: "../Pages/ad-detail",
-          params: { 
+          params: {
             image: imgParam,
             content: contentParam
           }
@@ -394,7 +394,7 @@ const HomePage = () => {
               offset: next * BANNER_WIDTH,
               animated: true
             });
-          } catch {}
+          } catch { }
         }
         return next;
       });
@@ -418,7 +418,7 @@ const HomePage = () => {
           offset: index * BANNER_WIDTH,
           animated: true
         });
-      } catch {}
+      } catch { }
     }
   }, [adBanners, BANNER_WIDTH]);
 
@@ -459,275 +459,273 @@ const HomePage = () => {
           nestedScrollEnabled
           keyboardShouldPersistTaps="handled"
         >
-        <View style={styles.header}>
-          {!user ? (
-            <TouchableOpacity onPress={() => router.push("/Authentication/Login")}>
-              <View
-                style={[
-                  styles.headerLoginContainer,
-                  { backgroundColor: theme.headerIconBackground }
-                ]}
-              >
-                <Icon name="log-in" size={20} color={theme.headerIconColor} />
-                <Text style={[styles.loginText, { color: theme.headerIconColor }]}>
-                  Login
-                </Text>
+          <View style={styles.header}>
+            {!user ? (
+              <TouchableOpacity onPress={() => router.push("/Authentication/Login")}>
+                <View
+                  style={[
+                    styles.headerLoginContainer,
+                    { backgroundColor: theme.headerIconBackground }
+                  ]}
+                >
+                  <Icon name="log-in" size={20} color={theme.headerIconColor} />
+                  <Text style={[styles.loginText, { color: theme.headerIconColor }]}>
+                    Login
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ) : (
+              <View style={{ width: 45 }} />
+            )}
+            <TouchableOpacity onPress={handleCartPress}>
+              <View style={[styles.headerIconContainer, { backgroundColor: theme.headerIconBackground }]}>
+                <Icon name="shopping-cart" size={20} color={theme.headerIconColor} />
+                {cartCount > 0 && (
+                  <View style={styles.cartBadge}>
+                    <Text style={styles.cartBadgeText}>
+                      {cartCount > 99 ? '99+' : cartCount}
+                    </Text>
+                  </View>
+                )}
               </View>
             </TouchableOpacity>
-          ) : (
-            <View style={{ width: 45 }} />
-          )}
-          <TouchableOpacity onPress={handleCartPress}>
-            <View style={[styles.headerIconContainer, { backgroundColor: theme.headerIconBackground }]}>
-              <Icon name="shopping-cart" size={20} color={theme.headerIconColor} />
-              {cartCount > 0 && (
-                <View style={styles.cartBadge}>
-                  <Text style={styles.cartBadgeText}>
-                    {cartCount > 99 ? '99+' : cartCount}
-                  </Text>
-                </View>
-              )}
-            </View>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.searchContainer}>
-          <View style={[styles.searchBar, {
-            backgroundColor: theme.searchBarBackground,
-            shadowColor: theme.searchBarShadow
-          }]}>
-            <Icon name="search" size={20} color={theme.searchIcon} style={styles.icon} />
-            <TextInput
-              style={[styles.input, { color: theme.inputText }]}
-              placeholder="Search for products..."
-              placeholderTextColor={theme.inputPlaceholder}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              returnKeyType="search"
-              onBlur={() => {
-                setSearchSuggestions([]);
-                setShowSuggestions(false);
-              }}
-              onSubmitEditing={() => {
-                if (searchQuery.trim()) {
-                  router.push({
-                    pathname: "/(tabs)/products",
-                    params: { searchTerm: searchQuery.trim() }
-                  });
+          </View>
+          <View style={styles.searchContainer}>
+            <View style={[styles.searchBar, {
+              backgroundColor: theme.searchBarBackground,
+              shadowColor: theme.searchBarShadow
+            }]}>
+              <Icon name="search" size={20} color={theme.searchIcon} style={styles.icon} />
+              <TextInput
+                style={[styles.input, { color: theme.inputText }]}
+                placeholder="Search for products..."
+                placeholderTextColor={theme.inputPlaceholder}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                returnKeyType="search"
+                onBlur={() => {
                   setSearchSuggestions([]);
                   setShowSuggestions(false);
-                }
-              }}
-            />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={clearSearch} style={styles.clearButton}>
-                <Icon name="x" size={16} color={theme.searchIcon} />
-              </TouchableOpacity>
-            )}
-          </View>
-          {showSuggestions && searchQuery.trim().length >= 1 && limitedSuggestions.length > 0 && (
-            <View
-              style={[styles.suggestionsDropdown, {
-                backgroundColor: theme.suggestionsBackground,
-                borderColor: theme.suggestionsBorder,
-                shadowColor: theme.searchBarShadow,
-              }]}
-            >
-              {limitedSuggestions.map((item, index) => (
-                <TouchableOpacity
-                  key={`${item.name}-${index}`}
-                  style={[styles.suggestionItem, { borderBottomColor: theme.suggestionItemBorder }]}
-                  onPress={() => handleSelectSuggestion(item)}
-                >
-                  <Icon name="search" size={16} color={theme.searchIcon} style={styles.suggestionIcon} />
-                  <Text style={[styles.suggestionText, { color: theme.suggestionText }]} numberOfLines={1}>
-                    {item.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-        </View>
-        <Text style={[styles.sectionTitle, { color: theme.text }]}>Categories</Text>
-        <FlatList
-          data={availableCategories}
-          keyExtractor={(item) => (item.id ? String(item.id) : String(item.name))}
-          extraData={themeVersion}
-          renderItem={({ item }) => {
-            const display = (typeof item === 'string') ? { name: item, image: '' } : item;
-            const hasImage = Boolean(display.image && String(display.image).trim().length > 0);
-            return (
-              <TouchableOpacity onPress={() => {
-                router.push({
-                  pathname: "/(tabs)/products",
-                  params: { category: display.name }
-                });
-              }}>
-                <View style={styles.categoryItem}>
-                  {hasImage ? (
-                    <Image
-                      source={{ uri: String(display.image) }}
-                      style={[styles.categoryImage, { backgroundColor: theme.categoryImageBackground }]}
-                      defaultSource={require('../../assets/images/loading-buffering.gif')}
-                    />
-                  ) : (
-                    <View style={[styles.categoryImage, { backgroundColor: theme.categoryImageBackground, justifyContent: 'center', alignItems: 'center' }]}>
-                      <Text style={{ color: theme.categoryText, fontWeight: '700' }}>
-                        {display.name ? String(display.name).charAt(0).toUpperCase() : '?'}
-                      </Text>
-                    </View>
-                  )}
-                  <Text style={[styles.categoryText, { color: theme.categoryText }]}>{display.name}</Text>
-                </View>
-              </TouchableOpacity>
-            );
-          }}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.listContainer}
-        />
-        <View style={styles.adBannerContainer}>
-          {adBanners.length > 0 ? (
-            <>
-              <FlatList
-                ref={bannerRef}
-                data={adBanners}
-                keyExtractor={(item, index) => `ad-banner-${index}`}
-                renderItem={({ item }) => (
-                  <TouchableOpacity 
-                    onPress={() => handleBannerPress(item)} 
-                    style={[
-                      styles.adBannerItemContainer, 
-                      { width: BANNER_WIDTH }
-                    ]}
-                    activeOpacity={0.9}
-                  >
-                    <Image
-                      source={{ uri: item.img }}
-                      style={styles.adBannerImage}
-                      resizeMode="contain"
-                      defaultSource={require('../../assets/images/loading-buffering.gif')}
-                    />
-                  </TouchableOpacity>
-                )}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                pagingEnabled
-                onMomentumScrollEnd={handleBannerScroll}
-                snapToAlignment="center"
-                snapToInterval={BANNER_WIDTH}
-                decelerationRate="fast"
-                getItemLayout={(_, index) => ({
-                  length: BANNER_WIDTH,
-                  offset: BANNER_WIDTH * index,
-                  index
-                })}
-                contentContainerStyle={styles.adBannerContentContainer}
+                }}
+                onSubmitEditing={() => {
+                  if (searchQuery.trim()) {
+                    router.push({
+                      pathname: "/(tabs)/products",
+                      params: { searchTerm: searchQuery.trim() }
+                    });
+                    setSearchSuggestions([]);
+                    setShowSuggestions(false);
+                  }
+                }}
               />
-              <View style={styles.paginationContainer}>
-                {adBanners.map((_, index) => (
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={clearSearch} style={styles.clearButton}>
+                  <Icon name="x" size={16} color={theme.searchIcon} />
+                </TouchableOpacity>
+              )}
+            </View>
+            {showSuggestions && searchQuery.trim().length >= 1 && limitedSuggestions.length > 0 && (
+              <View
+                style={[styles.suggestionsDropdown, {
+                  backgroundColor: theme.suggestionsBackground,
+                  borderColor: theme.suggestionsBorder,
+                  shadowColor: theme.searchBarShadow,
+                }]}
+              >
+                {limitedSuggestions.map((item, index) => (
                   <TouchableOpacity
-                    key={index}
-                    onPress={() => scrollToBanner(index)}
-                    activeOpacity={0.8}
-                    style={[
-                      styles.paginationDot,
-                      {
-                        backgroundColor:
-                          index === currentBannerIndex
-                            ? theme.accentColor
-                            : theme.paginationInactive || '#ccc'
-                      }
-                    ]}
-                  />
+                    key={`${item.name}-${index}`}
+                    style={[styles.suggestionItem, { borderBottomColor: theme.suggestionItemBorder }]}
+                    onPress={() => handleSelectSuggestion(item)}
+                  >
+                    <Icon name="search" size={16} color={theme.searchIcon} style={styles.suggestionIcon} />
+                    <Text style={[styles.suggestionText, { color: theme.suggestionText }]} numberOfLines={1}>
+                      {item.name}
+                    </Text>
+                  </TouchableOpacity>
                 ))}
               </View>
-            </>
-          ) : (
-            <Image
-              source={{ uri: 'https://b.top4top.io/p_34113iqov1.png' }}
-              style={styles.bannerimage}
-              resizeMode="contain"
-            />
-          )}
-        </View>
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>Top Selling</Text>
-          <TouchableOpacity onPress={() => {
-            router.push({
-              pathname: "/(tabs)/products",
-              params: {
-                type: "topSelling"
-              }
-            });
-          }}>
-            <Text style={[styles.seeAllText, { color: theme.accentColor }]}>Show More</Text>
-          </TouchableOpacity>
-        </View>
-        {loading && !load ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={theme.loadingIndicator} />
+            )}
           </View>
-        ) : (
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Categories</Text>
           <FlatList
-            data={topSellingList}
-            keyExtractor={(item) => item.id.toString()}
+            data={availableCategories}
+            keyExtractor={(item) => (item.id ? String(item.id) : String(item.name))}
             extraData={themeVersion}
-            renderItem={renderProductCard}
+            renderItem={({ item }) => {
+              const display = (typeof item === 'string') ? { name: item, image: '' } : item;
+              const hasImage = Boolean(display.image && String(display.image).trim().length > 0);
+              return (
+                <TouchableOpacity onPress={() => {
+                  router.push({
+                    pathname: "/(tabs)/products",
+                    params: { category: display.name }
+                  });
+                }}>
+                  <View style={styles.categoryItem}>
+                    {hasImage ? (
+                      <Image
+                        source={{ uri: String(display.image) }}
+                        style={[styles.categoryImage, { backgroundColor: theme.categoryImageBackground }]}
+                      />
+                    ) : (
+                      <View style={[styles.categoryImage, { backgroundColor: theme.categoryImageBackground, justifyContent: 'center', alignItems: 'center' }]}>
+                        <Text style={{ color: theme.categoryText, fontWeight: '700' }}>
+                          {display.name ? String(display.name).charAt(0).toUpperCase() : '?'}
+                        </Text>
+                      </View>
+                    )}
+                    <Text style={[styles.categoryText, { color: theme.categoryText }]}>{display.name}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            }}
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.listContainer}
           />
-        )}
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>New Arrivals</Text>
-          <TouchableOpacity onPress={() => {
-            router.push({
-              pathname: "/(tabs)/products",
-              params: {
-                type: "newArrival"
-              }
-            });
-          }}>
-            <Text style={[styles.seeAllText, { color: theme.accentColor }]}>Show More</Text>
-          </TouchableOpacity>
-        </View>
-        {loading && !load ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={theme.loadingIndicator} />
-          </View>
-        ) : (
-          <FlatList
-            data={newArrivalList}
-            keyExtractor={(item) => item.id.toString()}
-            extraData={themeVersion}
-            renderItem={renderProductCard}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.newIn}
-          />
-        )}
-        {recommendedProducts.length > 0 && (
-          <>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Recommended For You</Text>
-            </View>
-            {loading && !load ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={theme.loadingIndicator} />
-              </View>
+          <View style={styles.adBannerContainer}>
+            {adBanners.length > 0 ? (
+              <>
+                <FlatList
+                  ref={bannerRef}
+                  data={adBanners}
+                  keyExtractor={(item, index) => `ad-banner-${index}`}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      onPress={() => handleBannerPress(item)}
+                      style={[
+                        styles.adBannerItemContainer,
+                        { width: BANNER_WIDTH }
+                      ]}
+                      activeOpacity={0.9}
+                    >
+                      <Image
+                        source={{ uri: item.img }}
+                        style={styles.adBannerImage}
+                        resizeMode="contain"
+                      />
+                    </TouchableOpacity>
+                  )}
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  pagingEnabled
+                  onMomentumScrollEnd={handleBannerScroll}
+                  snapToAlignment="center"
+                  snapToInterval={BANNER_WIDTH}
+                  decelerationRate="fast"
+                  getItemLayout={(_, index) => ({
+                    length: BANNER_WIDTH,
+                    offset: BANNER_WIDTH * index,
+                    index
+                  })}
+                  contentContainerStyle={styles.adBannerContentContainer}
+                />
+                <View style={styles.paginationContainer}>
+                  {adBanners.map((_, index) => (
+                    <TouchableOpacity
+                      key={index}
+                      onPress={() => scrollToBanner(index)}
+                      activeOpacity={0.8}
+                      style={[
+                        styles.paginationDot,
+                        {
+                          backgroundColor:
+                            index === currentBannerIndex
+                              ? theme.accentColor
+                              : theme.paginationInactive || '#ccc'
+                        }
+                      ]}
+                    />
+                  ))}
+                </View>
+              </>
             ) : (
-              <FlatList
-                data={recommendedProducts}
-                keyExtractor={(item) => item.id}
-                extraData={themeVersion}
-                renderItem={renderProductCard}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.newIn}
+              <Image
+                source={{ uri: 'https://b.top4top.io/p_34113iqov1.png' }}
+                style={styles.bannerimage}
+                resizeMode="contain"
               />
             )}
-          </>
-        )}
+          </View>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Top Selling</Text>
+            <TouchableOpacity onPress={() => {
+              router.push({
+                pathname: "/(tabs)/products",
+                params: {
+                  type: "topSelling"
+                }
+              });
+            }}>
+              <Text style={[styles.seeAllText, { color: theme.accentColor }]}>Show More</Text>
+            </TouchableOpacity>
+          </View>
+          {loading && !load ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={theme.loadingIndicator} />
+            </View>
+          ) : (
+            <FlatList
+              data={topSellingList}
+              keyExtractor={(item) => item.id.toString()}
+              extraData={themeVersion}
+              renderItem={renderProductCard}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.listContainer}
+            />
+          )}
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>New Arrivals</Text>
+            <TouchableOpacity onPress={() => {
+              router.push({
+                pathname: "/(tabs)/products",
+                params: {
+                  type: "newArrival"
+                }
+              });
+            }}>
+              <Text style={[styles.seeAllText, { color: theme.accentColor }]}>Show More</Text>
+            </TouchableOpacity>
+          </View>
+          {loading && !load ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={theme.loadingIndicator} />
+            </View>
+          ) : (
+            <FlatList
+              data={newArrivalList}
+              keyExtractor={(item) => item.id.toString()}
+              extraData={themeVersion}
+              renderItem={renderProductCard}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.newIn}
+            />
+          )}
+          {recommendedProducts.length > 0 && (
+            <>
+              <View style={styles.sectionHeader}>
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>Recommended For You</Text>
+              </View>
+              {loading && !load ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color={theme.loadingIndicator} />
+                </View>
+              ) : (
+                <FlatList
+                  data={recommendedProducts}
+                  keyExtractor={(item) => item.id}
+                  extraData={themeVersion}
+                  renderItem={renderProductCard}
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.newIn}
+                />
+              )}
+            </>
+          )}
         </ScrollView>
       </View>
       {alertMsg && (

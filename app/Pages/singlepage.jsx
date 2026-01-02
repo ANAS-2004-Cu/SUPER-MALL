@@ -314,11 +314,7 @@ const ProductDetails = () => {
             >
                 <View style={[styles.imageWrapper, { backgroundColor: theme.cardBackground }]}>
                     <Image
-                        source={
-                            typeof product.image === 'string'
-                                ? { uri: product.image }
-                                : require("../../assets/images/loading-buffering.gif")
-                        }
+                        source={{ uri: product.image }}
                         style={styles.image}
                     />
                 </View>

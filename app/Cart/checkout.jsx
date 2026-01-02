@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, Stack } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, FlatList, Image, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import MiniAlert from '../../components/Component/MiniAlert';
 import { useUserStore } from '../../store/userStore';
@@ -22,6 +22,8 @@ const Checkout = () => {
   const [placingOrder, setPlacingOrder] = useState(false);
   const [alertMsg, setAlertMsg] = useState(null);
   const [alertType, setAlertType] = useState('success');
+  const [showConfirmation, setShowConfirmation] = useState(false);
+  const confirmationTimerRef = useRef(null);
 
   const [addresses, setAddresses] = useState([]);
   const [selectedAddress, setSelectedAddress] = useState(null);
@@ -76,6 +78,12 @@ const Checkout = () => {
     };
     init();
   }, [loadTheme, loadRegionFees]);
+
+  useEffect(() => {
+    return () => {
+      if (confirmationTimerRef.current) clearTimeout(confirmationTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (initializing) return;
@@ -255,10 +263,11 @@ const Checkout = () => {
         return;
       }
 
-      showAlert('Order placed successfully');
-      setTimeout(() => {
+      setShowConfirmation(true);
+      confirmationTimerRef.current = setTimeout(() => {
+        setShowConfirmation(false);
         router.replace('/(tabs)/home');
-      }, 800);
+      }, 4000);
     } catch (_error) {
       showAlert('Failed to place order', 'error');
     } finally {
@@ -447,6 +456,17 @@ const Checkout = () => {
 
       <AddressSelectModal />
 
+      {showConfirmation && (
+        <View style={[styles.confirmOverlay, { backgroundColor: theme.background }]}
+        >
+          <Image
+            source={require('../../assets/images/ConfirmationOrder.gif')}
+            style={styles.confirmGif}
+            resizeMode="contain"
+          />
+        </View>
+      )}
+
       {alertMsg && (
         <MiniAlert
           message={alertMsg}
@@ -492,6 +512,18 @@ const styles = StyleSheet.create({
   defaultPill: { fontSize: 12, fontWeight: '700', marginTop: 4 },
   manageBtn: { marginTop: 8, paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
   manageBtnText: { color: '#fff', fontWeight: '800' },
+
+  confirmOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+    zIndex: 999,
+  },
+  confirmGif: {
+    width: '85%',
+    height: 280,
+  },
 });
 
 export default Checkout;

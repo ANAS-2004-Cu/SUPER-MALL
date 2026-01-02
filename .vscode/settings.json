@@ -28,7 +28,7 @@
     },
     {
       "folderPath": "SUPER-MALL\\Firebase\\",
-      "color": "foldercolorizer.color_00ccff"
+      "color": "foldercolorizer.color_ff0000"
     },
     {
       "folderPath": "SUPER-MALL\\Modal\\",
@@ -165,6 +165,14 @@
     {
       "folderPath": "SUPER-MALL\\app\\Pages\\singlepage.jsx\\",
       "color": "foldercolorizer.color_ff0000"
+    },
+    {
+      "folderPath": "SUPER-MALL\\assets\\",
+      "color": "foldercolorizer.color_00cc33"
+    },
+    {
+      "folderPath": "SUPER-MALL\\assets\\images\\",
+      "color": "foldercolorizer.color_00cc33"
     }
   ]
 }

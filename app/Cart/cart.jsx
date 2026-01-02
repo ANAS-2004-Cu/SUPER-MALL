@@ -263,7 +263,6 @@ const CartPage = () => {
                 source={{ uri: p.image }}
                 style={styles.itemImage}
                 resizeMode="cover"
-                defaultSource={require('../../assets/images/loading-buffering.gif')}
               />
             ) : (
               <View style={[styles.itemImage, { justifyContent: 'center', alignItems: 'center' }]}>
