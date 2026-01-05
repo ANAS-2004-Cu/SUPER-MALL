@@ -14,21 +14,21 @@ const Layout = () => {
   }, []);
 
   return (
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="index" />
-        <Stack.Screen name="Authentication/Login" />
-        <Stack.Screen name="Authentication/Register" />
-        <Stack.Screen name="Authentication/ForgetPass" />
-        <Stack.Screen name="Onboarding" />
-        <Stack.Screen name="CategorySelection" />
-        <Stack.Screen name="products" />
-        <Stack.Screen name="Admintabs" />
-        <Stack.Screen name="cart" />
-        <Stack.Screen name="(ProfileTabs)" />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="Settings" />
-        <Stack.Screen name="singlepage" />
-      </Stack>
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="index" />
+      <Stack.Screen name="Authentication/Login" />
+      <Stack.Screen name="Authentication/Register" />
+      <Stack.Screen name="Authentication/ForgetPass" />
+      <Stack.Screen name="Onboarding" />
+      <Stack.Screen name="CategorySelection" />
+      <Stack.Screen name="products" />
+      <Stack.Screen name="Admintabs" />
+      <Stack.Screen name="cart" />
+      <Stack.Screen name="(ProfileTabs)" />
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="Settings" />
+      <Stack.Screen name="singlepage" />
+    </Stack>
   );
 };
 

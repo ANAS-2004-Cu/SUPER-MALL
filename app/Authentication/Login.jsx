@@ -4,10 +4,10 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Dimensions, Linking, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
-import MiniAlert from '../../components/Component/MiniAlert';
-import { useUserStore } from '../../store/userStore';
+import { getUserData, signIn } from '../../Backend/Firebase/DBAPI';
+import { useUserStore } from '../../Backend/Zustand/UserStore';
 import { darkTheme, lightTheme } from '../../Theme/Auth/LoginTheme';
-import { getUserData, signIn } from '../services/DBAPI.tsx';
+import MiniAlert from '../GeneralComponent/MiniAlert';
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -79,14 +79,14 @@ const Login = () => {
           useUserStore.getState().login(userData);
           // Sync preferred categories to cache on login
           if (userData?.isAdmin === true) {
-            router.replace('/Admintabs/Admin');
+            router.replace('../Admin/Admintabs/Admin');
           }
           else if (userData?.isBlocked === true) {
             showAlert('This Account is Blocked , Contact With Customer Service', 'error');
             setShowCustomerService(true);
           }
           else {
-            router.replace('/home');
+            router.replace('../User/(MainTaps)/Home');
           }
         } else {
           setError('User not found.');
@@ -105,11 +105,11 @@ const Login = () => {
   }
 
   const reg = () => {
-    router.push('/Authentication/Register');
+    router.push('./Register');
   }
 
   const forgotPassword = () => {
-    router.push('/Authentication/ForgetPass');
+    router.push('./ForgetPass');
   }
 
   const openWhatsApp = () => {
@@ -315,10 +315,10 @@ const Login = () => {
           value={email}
           onChangeText={(text) => setEmail(text)}
           keyboardType="email-address"
-          textContentType="emailAddress"  
-          autoComplete="email"           
-          autoCapitalize="none"         
-          autoCorrect={false}            
+          textContentType="emailAddress"
+          autoComplete="email"
+          autoCapitalize="none"
+          autoCorrect={false}
           placeholderTextColor={theme.primaryText === 'white' ? '#999' : '#555'}
         />
 
@@ -329,8 +329,8 @@ const Login = () => {
             secureTextEntry={showpass}
             value={password}
             onChangeText={setPassword}
-            textContentType="password"   
-            autoComplete="password"    
+            textContentType="password"
+            autoComplete="password"
             autoCapitalize="none"
             autoCorrect={false}
             placeholderTextColor={theme.primaryText === 'white' ? '#999' : '#555'}
@@ -366,12 +366,12 @@ const Login = () => {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={dynamicStyles.button1} onPress={() => router.push('/(tabs)/profile')}>
+        <TouchableOpacity style={dynamicStyles.button1}>
           <FontAwesome name='google' size={30} style={dynamicStyles.icon}></FontAwesome>
           <Text style={dynamicStyles.button1text}>Continue With Google</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={dynamicStyles.button1} onPress={() => router.push('../Pages/CategorySelection')}>
+        <TouchableOpacity style={dynamicStyles.button1}>
           <FontAwesome name='facebook' color='white' size={25} style={dynamicStyles.faceicon}></FontAwesome>
           <Text style={dynamicStyles.button1text}>Continue With Facebook</Text>
         </TouchableOpacity>

@@ -1,10 +1,10 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import { Stack, useRouter } from 'expo-router';
 import { useEffect } from 'react';
-import { StyleSheet, View, Alert } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useUserStore } from '../store/userStore';
-import { getUserData,fetchManageDocs } from './services/DBAPI';
+import { Alert, BackHandler, StyleSheet, View } from 'react-native';
+import { fetchManageDocs, getUserData } from '../Backend/Firebase/DBAPI';
+import { useUserStore } from '../Backend/Zustand/UserStore';
 
 const WelcomeScreen = () => {
   const router = useRouter();
@@ -22,23 +22,23 @@ const WelcomeScreen = () => {
               const userData = await getUserData(loginId);
               if (userData) {
                 useUserStore.getState().login(userData);
-                
+
                 if (userData.isAdmin === true) {
-                  router.replace('./Admintabs');
+                  router.replace('./Admin/Admintabs/Admin');
                 } else {
-                  router.replace('/(tabs)/home');
+                  router.replace('./User/(MainTaps)/Home');
                 }
               } else {
-                router.replace('/(tabs)/home');
+                router.replace('./User/(MainTaps)/Home');
               }
             } catch (_error) {
-                Alert.alert('Error', 'A connection error occurred. Please try again later.');
+              Alert.alert('Error', 'A connection error occurred. Please try again later.', [{ text: 'OK', onPress: () => BackHandler.exitApp() }], { cancelable: false });
             }
           } else {
-            router.replace('/(tabs)/home');
+            router.replace('./User/(MainTaps)/Home');
           }
         } catch (_error) {
-            Alert.alert('Error', 'A connection error occurred. Please try again later.');
+          Alert.alert('Error', 'A connection error occurred. Please try again later.', [{ text: 'OK', onPress: () => BackHandler.exitApp() }], { cancelable: false });
         }
       }, 5000);
     };
@@ -50,7 +50,7 @@ const WelcomeScreen = () => {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View>
-          <Image source={require('../assets/images/Logo.gif')} style={styles.logo} />
+        <Image source={require('../assets/images/Logo.gif')} style={styles.logo} />
       </View>
     </>
   );

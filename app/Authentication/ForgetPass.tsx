@@ -3,9 +3,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Dimensions, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import MiniAlert from '../../components/Component/MiniAlert';
-import { resetPassword } from '../services/DBAPI.tsx';
+import { resetPassword } from '../../Backend/Firebase/DBAPI';
 import { darkTheme, lightTheme } from '../../Theme/Auth/ForgetPassTheme';
+import MiniAlert from '../GeneralComponent/MiniAlert';
 
 const ForgetPass = () => {
   const router = useRouter();
@@ -74,7 +74,7 @@ const ForgetPass = () => {
     try {
       // Pass original email - Firebase function will handle case conversion
       const result = await resetPassword(trimmedEmail);
-      
+
       if (result.success) {
         showAlert("Reset password link sent to your email", "success");
         setTimeout(() => {
@@ -184,11 +184,11 @@ const ForgetPass = () => {
           <Ionicons name="arrow-back" size={24} color={theme.primaryText} />
         </TouchableOpacity>
         <Text style={dynamicStyles.title}>Forgot Password</Text>
-        <TextInput 
-          placeholder="Email Address" 
-          style={dynamicStyles.input} 
+        <TextInput
+          placeholder="Email Address"
+          style={dynamicStyles.input}
           value={email}
-          onChangeText={setEmail} 
+          onChangeText={setEmail}
           keyboardType="email-address"
           placeholderTextColor={theme.primaryText === 'white' ? '#999' : '#555'}
         />

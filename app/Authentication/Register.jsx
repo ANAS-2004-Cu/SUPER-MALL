@@ -4,10 +4,10 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Dimensions, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
-import MiniAlert from '../../components/Component/MiniAlert';
-import { useUserStore } from '../../store/userStore';
+import { checkUsernameExists, getUserData, signUp } from '../../Backend/Firebase/DBAPI';
+import { useUserStore } from '../../Backend/Zustand/UserStore';
 import { darkTheme, lightTheme } from '../../Theme/Auth/RegisterTheme';
-import { checkUsernameExists, getUserData, signUp } from '../services/DBAPI.tsx';
+import MiniAlert from '../GeneralComponent/MiniAlert';
 
 const Register = () => {
   const [username, setUsername] = useState('');
@@ -86,7 +86,7 @@ const Register = () => {
     try {
       // Check if username already exists
       const usernameExists = await checkUsernameExists(username);
-      
+
       if (usernameExists) {
         showAlert("Username is already used", "error");
         setLoading(false);
@@ -113,7 +113,7 @@ const Register = () => {
         }
 
         // Navigate to Onboarding -> CategorySelection after showing the alert
-        router.replace('../Pages/Onboarding');
+        router.replace('../User/Pages/OnBoarding');
       } else {
         if (result.error.includes("email-already-in-use")) {
           showAlert("This email already exists", "error");
@@ -142,44 +142,44 @@ const Register = () => {
       )}
 
       <View style={styles.container}>
-        <TouchableOpacity 
-          style={[styles.backbut, { backgroundColor: theme.backButtonBackground }]} 
+        <TouchableOpacity
+          style={[styles.backbut, { backgroundColor: theme.backButtonBackground }]}
           onPress={() => router.back()}
         >
           <Ionicons name="arrow-back" size={24} color={theme.iconColor} />
         </TouchableOpacity>
         <Text style={[styles.title, { color: theme.textColor }]}>Create Account</Text>
-        <TextInput 
-          placeholder="Username" 
-          style={[styles.input, { backgroundColor: theme.inputBackground, color: theme.textColor }]} 
-          value={username} 
+        <TextInput
+          placeholder="Username"
+          style={[styles.input, { backgroundColor: theme.inputBackground, color: theme.textColor }]}
+          value={username}
           onChangeText={setUsername}
-          placeholderTextColor={theme.textColor === 'white' ? '#AAA' : '#666'} 
+          placeholderTextColor={theme.textColor === 'white' ? '#AAA' : '#666'}
         />
-        <TextInput 
-          placeholder="Email Address" 
-          style={[styles.input, { backgroundColor: theme.inputBackground, color: theme.textColor }]} 
-          value={email} 
-          onChangeText={setEmail} 
+        <TextInput
+          placeholder="Email Address"
+          style={[styles.input, { backgroundColor: theme.inputBackground, color: theme.textColor }]}
+          value={email}
+          onChangeText={setEmail}
           keyboardType="email-address"
-          placeholderTextColor={theme.textColor === 'white' ? '#AAA' : '#666'} 
+          placeholderTextColor={theme.textColor === 'white' ? '#AAA' : '#666'}
         />
         <View style={styles.pass}>
-          <TextInput 
-            style={[styles.passinput, { backgroundColor: theme.inputBackground, color: theme.textColor }]} 
-            placeholder="Password" 
-            secureTextEntry={showpass} 
-            value={password} 
+          <TextInput
+            style={[styles.passinput, { backgroundColor: theme.inputBackground, color: theme.textColor }]}
+            placeholder="Password"
+            secureTextEntry={showpass}
+            value={password}
             onChangeText={setPassword}
-            placeholderTextColor={theme.textColor === 'white' ? '#AAA' : '#666'} 
+            placeholderTextColor={theme.textColor === 'white' ? '#AAA' : '#666'}
           />
           {password.length > 0 && <TouchableOpacity style={styles.passbutt} onPress={() => setshowpass(!showpass)}>
             <Icon name={showpass ? 'eye-slash' : 'eye'} size={24} color={theme.iconColor} />
           </TouchableOpacity>}
         </View>
-        <TouchableOpacity 
-          style={[styles.button, { backgroundColor: theme.buttonBackground }]} 
-          onPress={handleRegister} 
+        <TouchableOpacity
+          style={[styles.button, { backgroundColor: theme.buttonBackground }]}
+          onPress={handleRegister}
           disabled={loading}
         >
           <Text style={[styles.buttonText, { color: theme.textColor }]}>Register</Text>
